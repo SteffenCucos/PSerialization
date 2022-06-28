@@ -15,6 +15,11 @@ class ShoeBox():
     def __str__(self):
         return "{} {} in {} condition".format(self.size, self.name, self.condition)
 
+    def __eq__(self, other: object) -> bool:
+        return self.size == other.size \
+            and self.name == other.name \
+            and self.condition == other.condition
+
 class Shelf():
     def __init__(self, rows: list[list[ShoeBox]]):
         self.rows = rows
@@ -26,3 +31,6 @@ class Shelf():
                 s += str(shoe) + ","
             s += "\n"
         return s
+
+    def __eq__(self, other: object) -> bool:
+        return self.rows == other.rows

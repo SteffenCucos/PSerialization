@@ -1,5 +1,6 @@
 
-from ...src.serialize import serialize
+from  ...src.serialize import serialize
+from  ...src.deserialize import deserialize
 
 from ..models.shoe_store import (
     Shelf,
@@ -30,6 +31,30 @@ def test_serialize_store():
         }
     ]
 
-    assert False
+def test_deserialize_store():
+    expected = [
+        Shelf(
+            rows=[
+                [ShoeBox(10, "Jordans", Condition.EXCELLENT), ShoeBox(10, "Jordans", Condition.EXCELLENT)],
+                [ShoeBox(11, "Jordans", Condition.EXCELLENT), ShoeBox(11, "Jordans", Condition.EXCELLENT)],
+                [ShoeBox(12, "Jordans", Condition.EXCELLENT), ShoeBox(12, "Jordans", Condition.BAD)]
+            ]
+        )
+    ]
+
+    json = [
+        {
+            "rows": [
+                [{"size": 10, "name": "Jordans", "condition": "Excellent"}, {"size": 10, "name": "Jordans", "condition": "Excellent"}],
+                [{"size": 11, "name": "Jordans", "condition": "Excellent"}, {"size": 11, "name": "Jordans", "condition": "Excellent"}],
+                [{"size": 12, "name": "Jordans", "condition": "Excellent"}, {"size": 12, "name": "Jordans", "condition": "Bad"}]
+            ]
+        }
+    ]
+
+    deserialized = deserialize(json, list[Shelf])
+
+    assert deserialized == expected
+
 
 
