@@ -15,7 +15,7 @@ def test_serialize_store():
             rows=[
                 [ShoeBox(10, "Jordans", Condition.EXCELLENT), ShoeBox(10, "Jordans", Condition.EXCELLENT)],
                 [ShoeBox(11, "Jordans", Condition.EXCELLENT), ShoeBox(11, "Jordans", Condition.EXCELLENT)],
-                [ShoeBox(12, "Jordans", Condition.EXCELLENT), ShoeBox(12, "Jordans", Condition.BAD)]
+                [ShoeBox(12, "Jordans", Condition.EXCELLENT), ShoeBox(12,None, Condition.BAD)]
             ]
         )
     ]
@@ -26,7 +26,7 @@ def test_serialize_store():
             "rows": [
                 [{"size": 10, "name": "Jordans", "condition": "Excellent"}, {"size": 10, "name": "Jordans", "condition": "Excellent"}],
                 [{"size": 11, "name": "Jordans", "condition": "Excellent"}, {"size": 11, "name": "Jordans", "condition": "Excellent"}],
-                [{"size": 12, "name": "Jordans", "condition": "Excellent"}, {"size": 12, "name": "Jordans", "condition": "Bad"}]
+                [{"size": 12, "name": "Jordans", "condition": "Excellent"}, {"size": 12, "name": None, "condition": "Bad"}]
             ]
         }
     ]

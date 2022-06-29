@@ -16,6 +16,8 @@ class ShoeBox():
         return "{} {} in {} condition".format(self.size, self.name, self.condition)
 
     def __eq__(self, other: object) -> bool:
+        if other == None:
+            return False
         return self.size == other.size \
             and self.name == other.name \
             and self.condition == other.condition
@@ -33,4 +35,6 @@ class Shelf():
         return s
 
     def __eq__(self, other: object) -> bool:
+        if other == None:
+            return False
         return self.rows == other.rows
