@@ -10,6 +10,8 @@ from typing import (
 from types import GenericAlias
 from enum import Enum
 
+import dataclasses
+
 from .serialization_utils import (
     is_primitive,
     is_enum,
@@ -22,6 +24,10 @@ def deserialize_enum(v: Any, enumType: Type[Enum]) -> Enum:
 def deserialize_object(d: dict, classType: type):
     init = classType.__init__
     hints = get_type_hints(init)
+
+    if dataclasses.is_dataclass(classType):
+        hints.pop("return", None)
+
     arguments = set(init.__code__.co_varnames)
     # Calling the constructor instead of init will handle self
     arguments.remove("self")
