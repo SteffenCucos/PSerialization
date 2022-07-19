@@ -21,30 +21,89 @@ from .serialization_utils import (
 def deserialize_enum(v: Any, enumType: Type[Enum]) -> Enum:
     return enumType(v)
 
-def deserialize_object(d: dict, classType: type):
-    init = classType.__init__
-    hints = get_type_hints(init)
+def get_type_hierarchy(classType: type):
+    '''
+    Returns the type hierarchy in method/variable resolution order
 
-    if dataclasses.is_dataclass(classType):
-        hints.pop("return", None)
+        A
+        /\----\
+       B  C    H
+       |  |    |
+       D  |    G
+         /\
+        E  F
 
-    arguments = set(init.__code__.co_varnames)
-    # Calling the constructor instead of init will handle self
-    arguments.remove("self")
+    becomes
+    [A, B, D, C, E, F, H, G]   
+    '''
+    def get_bases(classType: type):
+        bases = [base for base in classType.__bases__ if base != object]
+        bases.reverse()
+        return bases
 
-    if len(hints) < len(arguments):
-        return "All parameters must be typed"
+    typeHierarchy = [classType]
+    bases = get_bases(classType)
 
-    if len(d) < len(hints):
-        return "Not enough parameters in dict"
-
-    deserializedParameters = {}
-    for varName, varType in hints.items():
-        value = d.get(varName)
-        deserializedValue = deserialize(value, varType)
-        deserializedParameters[varName] = deserializedValue
+    while len(bases) > 0:
+        base = bases.pop()
+        typeHierarchy.append(base)
         
-    return classType(** deserializedParameters)
+        for base in get_bases(base):
+            bases.append(base)
+
+    return typeHierarchy
+
+def get_attributes(classType: type) -> dict[str, type]:
+    attributes = {}
+    # Use the python defined method/variable resolution order to get the correct type for each attribute
+    for type in get_type_hierarchy(classType):
+        for attrName, attrType in getattr(type, '__annotations__', {}).items():
+            if attrName not in attributes.keys():
+                attributes[attrName] = attrType
+    
+    return attributes
+
+def get_empty_constructor():
+    def __init__(self):
+        pass
+
+    return __init__
+
+def deserialize_object(d: dict, classType: type):
+    '''
+    Constructs an instance of the given type from the supplied dictionary.
+
+    Any field in the dict that has no corresponding type will be set on
+    the object as its raw value.
+
+    Currently does not support Union types
+    '''
+    # Avoid running the constructor by forcing an
+    # empty init function to run instead of the real init.
+    # This avoids any potential stateful code from running
+    # Think some field on the object that sets a value based
+    # on the day of the week
+    class_init = classType.__init__
+    classType.__init__ = get_empty_constructor()
+    cls = classType()
+    classType.__init__ = class_init
+
+    attributes = get_attributes(classType)
+
+    type_hints = get_type_hints(class_init)
+    if dataclasses.is_dataclass(classType):
+        type_hints.pop("return", None)
+
+    # Sereialize any field that we can find a type hint for,
+    # otherwise set it to the raw primitve value
+    for name, value in d.items():
+        # Check if an attribute with the given name exists, but overrite 
+        # the type if it exists in the constructor type_hints
+        type = attributes.pop(name) if name in attributes.keys() else None
+        type = type_hints.pop(name) if name in type_hints.keys() else type
+        cls.__dict__[name] = deserialize(value, type) if type else value
+
+    return cls
 
 def deserialize_list(l: list, classType: type):
     deserializedList = []
