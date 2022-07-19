@@ -63,9 +63,22 @@ def get_attributes(classType: type) -> dict[str, type]:
     
     return attributes
 
-def get_empty_constructor():
-    def __init__(self):
-        pass
+
+def get_gil_safe_empty_constructor(original_init):
+    '''
+    Return a constructor that either takes 0 arguments, or exactly what original_init allows
+
+    Used to solve for the small window while deserializing where the GIL could start running
+    other code while the empty constructor is still set, and inadvertently cause an otherwise
+    valid object construction to fail
+    '''
+    def __init__(self, *positional, **named):
+        # If arguments are passed to this init then
+        # another thread is trying to construct an object
+        # and is execting to be able to pass parameters.
+        if (len(positional) + len(named.keys())) > 0:
+            # No need for validation since python handles that on its own
+            original_init(self, *positional, **named)
 
     return __init__
 
@@ -78,15 +91,15 @@ def deserialize_object(d: dict, classType: type):
 
     Currently does not support Union types
     '''
-    # Avoid running the constructor by forcing an
-    # empty init function to run instead of the real init.
-    # This avoids any potential stateful code from running
-    # Think some field on the object that sets a value based
-    # on the day of the week
     class_init = classType.__init__
-    classType.__init__ = get_empty_constructor()
+    # Use a constructor that allows for being called 
+    # without any parameters for simpler deserialization, but
+    # that won't cause other valid object constructions to fail
+    # if the GIL switches to another thread inbetween this next
+    # line and the restoration of the original init method
+    classType.__init__ = get_gil_safe_empty_constructor(class_init)
     cls = classType()
-    classType.__init__ = class_init
+    classType.__init__ = class_init # Restore the old constructor
 
     attributes = get_attributes(classType)
 
