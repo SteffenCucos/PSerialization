@@ -90,6 +90,10 @@ def deserialize_object(d: dict, classType: type):
         type = type_hints.pop(name) if name in type_hints.keys() else type
         cls.__dict__[name] = deserialize(value, type) if type else value
 
+    if len(attributes.keys()) + len(type_hints.keys()) > 0:
+        # There are attributes or init_parameters that weren't found in d
+        pass
+
     return cls
 
 def deserialize_list(l: list, classType: type):
