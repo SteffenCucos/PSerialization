@@ -20,6 +20,7 @@ from .serialization_utils import (
     get_attributes
 )
 
+
 class Deserializer:
     def __init__(self, middleware: dict[type, Callable[[object], type]] = []):
         self.middleware = middleware
@@ -50,7 +51,7 @@ class Deserializer:
         # Sereialize any field that we can find a type hint for,
         # otherwise set it to the raw primitve value
         for name, value in d.items():
-            # Check if an attribute with the given name exists, but overrite 
+            # Check if an attribute with the given name exists, but overrite
             # the type if it exists in the constructor type_hints
             type = attributes.pop(name) if name in attributes.keys() else None
             type = type_hints.pop(name) if name in type_hints.keys() else type
@@ -62,9 +63,9 @@ class Deserializer:
 
         return cls
 
-    def deserialize_list(self, l: list, classType: type):
+    def deserialize_list(self, lst: list, classType: type):
         deserializedList = []
-        for value in l:
+        for value in lst:
             deserializedList.append(self.deserialize(value, classType))
 
         return deserializedList
@@ -77,9 +78,9 @@ class Deserializer:
             deserializedDict[deserializedKey] = deserializedValue
 
         return deserializedDict
-        
+
     def deserialize(self, value: Any, classType: type):
-        if value == None:
+        if value is None:
             # Allow None values
             return None
         if is_primitive(classType):
@@ -93,16 +94,17 @@ class Deserializer:
         if isinstance(classType, GenericAlias):
             typeArgs = classType.__args__
             originType = classType.__origin__
-            if originType == type([]): # list of some type
-                typeArg = typeArgs[0] # List paramaterization only takes 1 argument
+            if originType is list:  # list of some type
+                typeArg = typeArgs[0]  # List paramaterization only takes 1 argument
                 return self.deserialize_list(value, typeArg)
             else:
                 keyType = typeArgs[0]
                 valueType = typeArgs[1]
                 return self.deserialize_dict(value, keyType, valueType)
-        if (deserializer := self.middleware.get(classType, None)) != None:
+        if (deserializer := self.middleware.get(classType, None)) is not None:
             return deserializer(value)
 
         return self.deserialize_simple_object(value, classType)
+
 
 default_deserializer = Deserializer(middleware={})
