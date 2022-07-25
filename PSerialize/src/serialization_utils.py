@@ -10,8 +10,11 @@ from enum import Enum
 import inspect
 
 primitiveTypes = set([bool, int, float, str])
+
+
 def is_primitive(type: type):
     return type in primitiveTypes or is_extended_primitive(type)
+
 
 def is_extended_primitive(type: type):
     if not inspect.isclass(type):
@@ -21,20 +24,23 @@ def is_extended_primitive(type: type):
             return True
     return False
 
+
 def is_enum(type: type):
     return inspect.isclass(type) and issubclass(type, Enum)
+
 
 def is_optional(typeT: type):
     origin = get_origin(typeT)
     args = get_args(typeT)
     return origin is Union and type(None) in args
 
+
 def get_type_hierarchy(classType: type):
     '''
     Returns the type hierarchy in method/variable resolution order
 
-        A
-        /\----\
+         A
+        / |----\
        B  C    H
        |  |    |
        D  |    G
@@ -42,7 +48,7 @@ def get_type_hierarchy(classType: type):
         E  F
 
     becomes
-    [A, B, D, C, E, F, H, G]   
+    [A, B, D, C, E, F, H, G]
     '''
     def get_bases(classType: type):
         bases = [base for base in classType.__bases__ if base != object]
@@ -55,11 +61,12 @@ def get_type_hierarchy(classType: type):
     while len(bases) > 0:
         base = bases.pop()
         typeHierarchy.append(base)
-        
+
         for base in get_bases(base):
             bases.append(base)
 
     return typeHierarchy
+
 
 def get_attributes(classType: type) -> dict[str, type]:
     attributes = {}
@@ -68,5 +75,5 @@ def get_attributes(classType: type) -> dict[str, type]:
         for attrName, attrType in getattr(type, '__annotations__', {}).items():
             if attrName not in attributes.keys():
                 attributes[attrName] = attrType
-    
+
     return attributes

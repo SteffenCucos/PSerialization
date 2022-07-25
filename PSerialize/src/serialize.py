@@ -6,6 +6,7 @@ from .serialization_utils import (
     is_enum
 )
 
+
 class Serializer:
     def __init__(self, middleware: dict[type, Callable[[object], type]] = []):
         self.middleware = middleware
@@ -26,11 +27,11 @@ class Serializer:
         serializedList = []
         for element in list:
             serializedList.append(self.serialize(element))
-        
+
         return serializedList
 
     def serialize(self, value: Any):
-        if value == None:
+        if value is None:
             return None
         classType = type(value)
         if is_primitive(classType):
@@ -38,13 +39,14 @@ class Serializer:
         if is_enum(classType):
             # Represent enums as their String representation
             return self.serialize(value.value)
-        if classType is type([]):
+        if classType is list:
             return self.serialize_list(value)
-        if classType is type({}):
+        if classType is dict:
             return self.serialize_dict(value)
-        if (serializer := self.middleware.get(classType, None)) != None:
+        if (serializer := self.middleware.get(classType, None)) is not None:
             return serializer(value)
 
         return self.serialize_basic_object(value)
+
 
 default_serializer = Serializer(middleware={})
