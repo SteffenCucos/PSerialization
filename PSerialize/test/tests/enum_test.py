@@ -1,9 +1,7 @@
-
 import pytest
 
-
-from  ...src.serialize import serialize
-from  ...src.deserialize import deserialize
+from  ...src.serialize import default_serializer as serializer
+from  ...src.deserialize import default_deserializer as deserializer
 
 from ..models.enum import Number
 
@@ -14,7 +12,7 @@ from ..models.enum import Number
     ({Number.FIVE: 5}, {"five": 5})
 ])
 def test_serialize_enum(input, expected):
-    assert serialize(input) == expected
+    assert serializer.serialize(input) == expected
 
 @pytest.mark.parametrize("input,type,expected", [
     ("one", Number, Number.ONE),
@@ -22,5 +20,5 @@ def test_serialize_enum(input, expected):
     ({"five": 5}, dict[Number,int], {Number.FIVE: 5})
 ])
 def test_deserialize_enum(input, type, expected):
-    assert deserialize(input, type) == expected
+    assert deserializer.deserialize(input, type) == expected
 
