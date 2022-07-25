@@ -1,6 +1,6 @@
 
-from  ...src.serialize import serialize
-from  ...src.deserialize import deserialize
+from  ...src.serialize import default_serializer as serializer
+from  ...src.deserialize import default_deserializer as deserializer
 
 from ..models.shoe_store import (
     Shelf,
@@ -20,7 +20,7 @@ def test_serialize_store():
         )
     ]
 
-    serialized = serialize(store)
+    serialized = serializer.serialize(store)
     assert serialized == [
         {
             "rows": [
@@ -52,7 +52,7 @@ def test_deserialize_store():
         }
     ]
 
-    deserialized = deserialize(json, list[Shelf])
+    deserialized = deserializer.deserialize(json, list[Shelf])
 
     assert deserialized == expected
 
