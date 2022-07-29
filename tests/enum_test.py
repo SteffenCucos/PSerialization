@@ -1,9 +1,9 @@
 import pytest
 
-from  ...src.serialize import default_serializer as serializer
-from  ...src.deserialize import default_deserializer as deserializer
+from src.pserialize.serialize import default_serializer as serializer
+from src.pserialize.deserialize import default_deserializer as deserializer
 
-from ..models.enum import Number
+from .models.enum import Number
 
 
 @pytest.mark.parametrize("input,expected", [

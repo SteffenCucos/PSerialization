@@ -1,8 +1,8 @@
 
-from  ...src.serialize import default_serializer as serializer
-from  ...src.deserialize import default_deserializer as deserializer
+from src.pserialize.serialize import default_serializer as serializer
+from src.pserialize.deserialize import default_deserializer as deserializer
 
-from ..models.shoe_store import (
+from .models.shoe_store import (
     Shelf,
     ShoeBox,
     Condition

@@ -1,8 +1,8 @@
 
 from datetime import datetime
 
-from  ...src.serialize import Serializer
-from  ...src.deserialize import Deserializer
+from src.pserialize.serialize import Serializer
+from src.pserialize.deserialize import Deserializer
 
 def serialize_date(value: object):
     assert type(value) is datetime
