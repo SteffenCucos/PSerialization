@@ -8,7 +8,7 @@ For more complicated types like datetime.datetime, users of this library can sup
 Useful for sending python objects to a system that may only be expecting to handle primitive types, as well as reconstructing python objects from systems that lack type information. I personally use this for editing/loading configuration files stored as json, and for loading objects from nosql dbs like MongoDB.
 
 
-## "Basic' Object Example
+## 'Basic' Object Example
 ```python
 from pserialize.serializer import Serializer
 from pserialize.deserializer import Deserializer
