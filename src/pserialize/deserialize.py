@@ -28,7 +28,7 @@ class Deserializer:
     def deserialize_enum(self, v: Any, enumType: Type[Enum]) -> Enum:
         return enumType(v)
 
-    def deserialize_simple_object(self, d: dict, classType: type):
+    def deserialize_simple_object(self, d: dict, classType: type, strict: bool = False):
         '''
         Constructs an instance of the given type from the supplied dictionary.
 
@@ -55,7 +55,14 @@ class Deserializer:
             # the type if it exists in the constructor type_hints
             type = attributes.pop(name) if name in attributes.keys() else None
             type = type_hints.pop(name) if name in type_hints.keys() else type
-            cls.__dict__[name] = self.deserialize(value, type) if type else value
+
+            # if strict deserialization is set, then we want to skip deserializing
+            # fields that we can't find a type for
+            if strict and type is None:
+                continue
+
+            cls.__dict__[name] = self.deserialize(value, type, strict) if type else value
+
 
         if len(attributes.keys()) + len(type_hints.keys()) > 0:
             # There are attributes or init_parameters that weren't found in the dictionary
@@ -63,23 +70,23 @@ class Deserializer:
 
         return cls
 
-    def deserialize_list(self, lst: list, classType: type):
+    def deserialize_list(self, lst: list, classType: type, strict: bool = False):
         deserializedList = []
         for value in lst:
-            deserializedList.append(self.deserialize(value, classType))
+            deserializedList.append(self.deserialize(value, classType, strict))
 
         return deserializedList
 
-    def deserialize_dict(self, d: dict, keyType: type, valueType: type):
+    def deserialize_dict(self, d: dict, keyType: type, valueType: type, strict: bool = False):
         deserializedDict = {}
         for key, value in d.items():
-            deserializedKey = self.deserialize(key, keyType)
-            deserializedValue = self.deserialize(value, valueType)
+            deserializedKey = self.deserialize(key, keyType, strict)
+            deserializedValue = self.deserialize(value, valueType, strict)
             deserializedDict[deserializedKey] = deserializedValue
 
         return deserializedDict
 
-    def deserialize(self, value: Any, classType: type):
+    def deserialize(self, value: Any, classType: type, strict: bool = False):
         if value is None:
             # Allow None values
             return None
@@ -104,7 +111,7 @@ class Deserializer:
         if (deserializer := self.middleware.get(classType, None)) is not None:
             return deserializer(value)
 
-        return self.deserialize_simple_object(value, classType)
+        return self.deserialize_simple_object(value, classType, strict)
 
 
 default_deserializer = Deserializer(middleware={})
