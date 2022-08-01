@@ -1,5 +1,5 @@
 
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 from src.pserialize.deserialize import Deserializer, default_deserializer
 
@@ -54,5 +54,6 @@ class Serializer:
         serialized = self.serialize(value)
         custom_type = deserializer.deserialize(serialized, c_type, strict=True)
         return self.serialize(custom_type)
+
 
 default_serializer = Serializer(middleware={})

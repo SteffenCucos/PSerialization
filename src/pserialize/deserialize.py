@@ -17,6 +17,7 @@ from .serialization_utils import (
     is_primitive,
     is_enum,
     is_optional,
+    is_union,
     get_attributes
 )
 
@@ -63,7 +64,6 @@ class Deserializer:
 
             cls.__dict__[name] = self.deserialize(value, type, strict) if type else value
 
-
         if len(attributes.keys()) + len(type_hints.keys()) > 0:
             # There are attributes or init_parameters that weren't found in the dictionary
             pass
@@ -86,6 +86,15 @@ class Deserializer:
 
         return deserializedDict
 
+    def deserialize_union(self, value: Any, allowed_types: list[type], strict: bool = False):
+        for type in allowed_types:
+            try:
+                # Check each type from left to right and return
+                # the first deserialized value that works
+                return self.deserialize(value, type, strict)
+            except Exception:
+                pass
+
     def deserialize(self, value: Any, classType: type, strict: bool = False):
         if value is None:
             # Allow None values
@@ -103,11 +112,14 @@ class Deserializer:
             originType = classType.__origin__
             if originType is list:  # list of some type
                 typeArg = typeArgs[0]  # List paramaterization only takes 1 argument
-                return self.deserialize_list(value, typeArg)
+                return self.deserialize_list(value, typeArg, strict)
             else:
                 keyType = typeArgs[0]
                 valueType = typeArgs[1]
-                return self.deserialize_dict(value, keyType, valueType)
+                return self.deserialize_dict(value, keyType, valueType, strict)
+        if is_union(classType):
+            allowed_types = classType.__args__
+            return self.deserialize_union(value, allowed_types, strict)
         if (deserializer := self.middleware.get(classType, None)) is not None:
             return deserializer(value)
 

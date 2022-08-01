@@ -30,9 +30,12 @@ def is_enum(type: type):
 
 
 def is_optional(typeT: type):
-    origin = get_origin(typeT)
     args = get_args(typeT)
-    return origin is Union and type(None) in args
+    return is_union(typeT) and type(None) in args
+
+
+def is_union(type: type):
+    return get_origin(type) is Union
 
 
 def get_type_hierarchy(classType: type):
