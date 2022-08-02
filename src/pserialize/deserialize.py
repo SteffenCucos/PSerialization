@@ -168,7 +168,9 @@ class Deserializer:
         Returns:
             classType: An instance of classType
         """
-
+        
+        if (deserializer := self.middleware.get(classType, None)) is not None:
+            return deserializer(value)
         if value is None:
             # Allow None values
             return None
@@ -193,8 +195,6 @@ class Deserializer:
         if is_union(classType):
             allowed_types = classType.__args__
             return self.deserialize_union(value, allowed_types, strict)
-        if (deserializer := self.middleware.get(classType, None)) is not None:
-            return deserializer(value)
 
         return self.deserialize_simple_object(value, classType, strict)
 
