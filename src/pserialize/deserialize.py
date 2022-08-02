@@ -151,6 +151,15 @@ class Deserializer:
         """
         Deserializes an arbitrary value into the supplied class type
 
+        Default support for:
+            Primitives (int, float, str, None)
+            Enums
+            Lists
+            Dicts
+            Basic objects
+
+        Any custom deserialization logic can be added using middleware
+
         Args:
             value (Any): The value to deserialize
             classType (type): The type the value represents
