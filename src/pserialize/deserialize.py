@@ -26,18 +26,33 @@ class Deserializer:
     def __init__(self, middleware: dict[type, Callable[[object], type]] = []):
         self.middleware = middleware
 
-    def deserialize_enum(self, v: Any, enumType: Type[Enum]) -> Enum:
-        return enumType(v)
+    def deserialize_enum(self, value: Any, enumType: Type[Enum]) -> Enum:
+        """
+        Deserializes a value into an Enum
 
-    def deserialize_simple_object(self, d: dict, classType: type, strict: bool = False):
-        '''
-        Constructs an instance of the given type from the supplied dictionary.
+        Args:
+            value (Any): The value to deserialize
+            enumType (Type[Enum]): The specific Enum type to create
 
-        Any field in the dict that has no corresponding type will be set on
-        the object as its raw value.
+        Returns:
+            Enum: The deserialized value
+        """
 
-        Currently does not support Union types
-        '''
+        return enumType(value)
+
+    def deserialize_simple_object(self, dict: dict, classType: type, strict: bool = False):
+        """
+        Constructs an instance of the given type from the supplied dictionary
+
+        Args:
+            dict (dict): Dictionary with object structure
+            classType (type): The type to deserialize into
+            strict (bool, optional): Determines if extra fields in the dictionary that are not found in the type should be inserted into the object. Defaults to False.
+
+        Returns:
+            classType: An instance of classType
+        """
+
         attributes = get_attributes(classType)
 
         type_hints = get_type_hints(classType.__init__)
@@ -49,10 +64,10 @@ class Deserializer:
         # and will need a custom deserializer
         cls = object.__new__(classType)
 
-        # Sereialize any field that we can find a type hint for,
-        # otherwise set it to the raw primitve value
-        for name, value in d.items():
-            # Check if an attribute with the given name exists, but overrite
+        # Serialize any field that we can find a type hint for,
+        # otherwise set it to the raw primitive value
+        for name, value in dict.items():
+            # Check if an attribute with the given name exists, but overwrite
             # the type if it exists in the constructor type_hints
             type = attributes.pop(name) if name in attributes.keys() else None
             type = type_hints.pop(name) if name in type_hints.keys() else type
@@ -71,15 +86,40 @@ class Deserializer:
         return cls
 
     def deserialize_list(self, lst: list, classType: type, strict: bool = False):
+        """
+        Deserializes a list[classType]
+
+        Args:
+            lst (list): The list to deserialize
+            classType (type): The type of the list elements
+            strict (bool, optional): Determines if extra fields will/won't be added to the deserialized value. Defaults to False.
+
+        Returns:
+            list[classType]: Deserialized list of elements
+        """
+
         deserializedList = []
         for value in lst:
             deserializedList.append(self.deserialize(value, classType, strict))
 
         return deserializedList
 
-    def deserialize_dict(self, d: dict, keyType: type, valueType: type, strict: bool = False):
+    def deserialize_dict(self, dict: dict, keyType: type, valueType: type, strict: bool = False):
+        """
+        Deserializes the keys and values of the input dictionary
+
+        Args:
+            dict (dict): The dictionary to deserialize
+            keyType (type): The type of the keys of the dictionary
+            valueType (type): The type of the values of the dictionary
+            strict (bool, optional): Determines if extra fields will/won't be added to the deserialized value. Defaults to False.
+
+        Returns:
+            dict[keyType, valueType]: Deserialized dictionary
+        """
+
         deserializedDict = {}
-        for key, value in d.items():
+        for key, value in dict.items():
             deserializedKey = self.deserialize(key, keyType, strict)
             deserializedValue = self.deserialize(value, valueType, strict)
             deserializedDict[deserializedKey] = deserializedValue
@@ -87,6 +127,18 @@ class Deserializer:
         return deserializedDict
 
     def deserialize_union(self, value: Any, allowed_types: list[type], strict: bool = False):
+        """
+        Deserializes a value into the first allowed type that succeeds
+
+        Args:
+            value (Any): The value to deserialize
+            allowed_types (list[type]): The list of possible types the value represents
+            strict (bool, optional): Determines if extra fields will/won't be added to the deserialized value. Defaults to False.
+
+        Returns:
+            type: An instance of one of the allowed types
+        """
+
         for type in allowed_types:
             try:
                 # Check each type from left to right and return
@@ -96,6 +148,18 @@ class Deserializer:
                 pass
 
     def deserialize(self, value: Any, classType: type, strict: bool = False):
+        """
+        Deserializes an arbitrary value into the supplied class type
+
+        Args:
+            value (Any): The value to deserialize
+            classType (type): The type the value represents
+            strict (bool, optional): Determines if extra fields will/won't be added to the deserialized value. Defaults to False.
+
+        Returns:
+            classType: An instance of classType
+        """
+
         if value is None:
             # Allow None values
             return None
@@ -111,7 +175,7 @@ class Deserializer:
             typeArgs = classType.__args__
             originType = classType.__origin__
             if originType is list:  # list of some type
-                typeArg = typeArgs[0]  # List paramaterization only takes 1 argument
+                typeArg = typeArgs[0]  # List parameterization only takes 1 argument
                 return self.deserialize_list(value, typeArg, strict)
             else:
                 keyType = typeArgs[0]
