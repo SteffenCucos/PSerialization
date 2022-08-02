@@ -168,9 +168,9 @@ class Deserializer:
         Returns:
             classType: An instance of classType
         """
-        
+
         if (deserializer := self.middleware.get(classType, None)) is not None:
-            return deserializer(value)
+            return deserializer(self, value)
         if value is None:
             # Allow None values
             return None

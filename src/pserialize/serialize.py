@@ -81,11 +81,11 @@ class Serializer:
             object: The serialized value
         """
 
+        classType = type(value)
         if (serializer := self.middleware.get(classType, None)) is not None:
-            return serializer(value)
+            return serializer(self, value)
         if value is None:
             return None
-        classType = type(value)
         if is_primitive(classType):
             return value
         if is_enum(classType):
