@@ -80,6 +80,9 @@ class Serializer:
         Returns:
             object: The serialized value
         """
+
+        if (serializer := self.middleware.get(classType, None)) is not None:
+            return serializer(value)
         if value is None:
             return None
         classType = type(value)
@@ -91,8 +94,6 @@ class Serializer:
             return self.serialize_list(value)
         if classType is dict:
             return self.serialize_dict(value)
-        if (serializer := self.middleware.get(classType, None)) is not None:
-            return serializer(value)
 
         return self.serialize_basic_object(value)
 
@@ -109,7 +110,7 @@ class Serializer:
         Returns:
             c_type: A c_type instance
         """
-        
+
         serialized = self.serialize(value)
         custom_type = deserializer.deserialize(serialized, c_type, strict=True)
         return self.serialize(custom_type)
