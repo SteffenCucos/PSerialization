@@ -74,7 +74,7 @@ def get_type_hierarchy(classType: type):
 def get_attributes(classType: type) -> dict[str, type]:
     attributes = {}
     # Use the python defined method/variable resolution order to get the correct type for each attribute
-    for type in get_type_hierarchy(classType):
+    for type in inspect.getmro(classType):
         for attrName, attrType in getattr(type, '__annotations__', {}).items():
             if attrName not in attributes.keys():
                 attributes[attrName] = attrType
