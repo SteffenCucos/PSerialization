@@ -1,4 +1,5 @@
-# PSerialization
+# PSerialization 
+
 Python library for serializing & deserializing python objects.
 
 Out of the box support for "basic" object de/serialization, that is objects that hold all of their state in __ dict __ and have a trivial __ new __.
@@ -6,6 +7,8 @@ Out of the box support for "basic" object de/serialization, that is objects that
 For more complicated types like datetime.datetime, users of this library can supply custom middleware to handle de/serializing those types.
 
 Useful for sending python objects to a system that may only be expecting to handle primitive types, as well as reconstructing python objects from systems that lack type information. I personally use this for editing/loading configuration files stored as json, and for loading objects from nosql dbs like MongoDB.
+
+https://github.com/SteffenCucos/PSerialization
 
 
 ## 'Basic' Object Example
@@ -74,3 +77,10 @@ if __name__ == "__main__":
 	assert deserialized == date
 
 ```
+
+## Update PyPi Package
+```
+py -m build
+py -m twine upload --repository pypi dist/*
+```
+
