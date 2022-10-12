@@ -10,7 +10,7 @@ from .serialization_utils import (
 
 
 class Serializer:
-    def __init__(self, middleware: dict[type, Callable[[object], type]] = []):
+    def __init__(self, middleware: dict[type, Callable[[object], type]] = {}):
         self.middleware = middleware
 
     def serialize_basic_object(self, object: object) -> dict:
