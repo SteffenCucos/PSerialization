@@ -23,7 +23,7 @@ from .serialization_utils import (
 
 
 class Deserializer:
-    def __init__(self, middleware: dict[type, Callable[[object], type]] = []):
+    def __init__(self, middleware: dict[type, Callable[[object], type]] = {}):
         self.middleware = middleware
 
     def deserialize_enum(self, value: Any, enumType: Type[Enum]) -> Enum:
