@@ -1,16 +1,13 @@
-
-
-from src.pserialize.deserialize import Deserializer
-from src.pserialize.serialize import Serializer
+from typing import Callable
 
 from datetime import datetime
 
 
 class _datetime:
     @staticmethod
-    def deserializer(deserializer: Deserializer, value: str) -> datetime:
+    def deserializer(value: str, middleware: dict[type, Callable[[object], type]] = {}) -> datetime:
         return datetime.fromisoformat(value)
 
     @staticmethod
-    def serializer(serializer: Serializer, obj: datetime) -> str:
+    def serializer(obj: datetime, middleware: dict[type, Callable[[object], type]] = {}) -> str:
         return obj.isoformat()

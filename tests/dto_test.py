@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from src.pserialize.serialize import default_serializer as serializer
+from src.pserialize.pserialize import serialize_into
 
 def test_serialize_into():
     @dataclass
@@ -20,7 +20,7 @@ def test_serialize_into():
 
     user = User(1, "Andy", "andy@gmail.com", "super_secret")
 
-    serialized = serializer.serialize_into(user, UserDTO)
+    serialized = serialize_into(user, UserDTO)
 
     # Make sure password didn't get serialized
     assert serialized == {
