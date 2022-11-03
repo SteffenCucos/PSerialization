@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from src.pserialize.pserialize import serialize_into
+from src.pserialize import serialize_into
 
 def test_serialize_into():
     @dataclass

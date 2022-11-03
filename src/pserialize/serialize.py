@@ -1,7 +1,7 @@
 
 from typing import Any, Callable
 
-from src.pserialize.deserialize import deserialize
+from .deserialize import deserialize
 
 from .serialization_utils import (
     is_primitive,

@@ -1,4 +1,4 @@
-from src.pserialize.pserialize import serialize, deserialize
+from src.pserialize import serialize, deserialize
 
 from .models.dataclass import (
     A
