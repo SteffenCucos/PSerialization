@@ -1,7 +1,7 @@
 
 from datetime import datetime
 
-from src.pserialize.pserialize import Serializer, Deserializer
+from src.pserialize import Serializer, Deserializer
 
 from src.pserialize.middleware.datetime import _datetime
 

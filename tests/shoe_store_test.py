@@ -1,5 +1,5 @@
 
-from src.pserialize.pserialize import serialize, deserialize
+from src.pserialize import serialize, deserialize
 
 from .models.shoe_store import (
     Shelf,

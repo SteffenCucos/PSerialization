@@ -2,7 +2,7 @@
 from typing import Union
 from dataclasses import dataclass
 
-from src.pserialize.pserialize import serialize, deserialize
+from src.pserialize import serialize, deserialize
 
 def test_union():
 
