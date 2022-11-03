@@ -2,8 +2,7 @@
 from typing import Union
 from dataclasses import dataclass
 
-from src.pserialize.serialize import default_serializer as serializer
-from src.pserialize.deserialize import default_deserializer as deserializer
+from src.pserialize.pserialize import serialize, deserialize
 
 def test_union():
 
@@ -13,7 +12,7 @@ def test_union():
 
     a_list = [A(1), A("4"), A("four")]
 
-    serialized = serializer.serialize(a_list)
+    serialized = serialize(a_list)
 
     assert serialized == [
         {"a":1},
@@ -21,7 +20,7 @@ def test_union():
         {"a":"four"}
     ]
 
-    deserialized = deserializer.deserialize(serialized, list[A])
+    deserialized = deserialize(serialized, list[A])
     # "4" can be coerced to int(4), and since int appears 
     # in the Union type first it takes precedent over str
     expected = [A(1), A(4), A("four")]

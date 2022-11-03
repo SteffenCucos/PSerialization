@@ -37,7 +37,7 @@ if __name__ == "__main__":
 	]
 	
 	# Build back the object representation just from primitives
-	deserialized = deserializer.deserialize(serialized, Shoe)
+	deserialized = deserializer.deserialize(serialized, list[Shoe])
 	
 	assert deserialized == shoes
 ```

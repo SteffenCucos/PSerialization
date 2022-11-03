@@ -1,8 +1,8 @@
 
 from datetime import datetime
 
-from src.pserialize.serialize import Serializer
-from src.pserialize.deserialize import Deserializer
+from src.pserialize.pserialize import Serializer, Deserializer
+
 from src.pserialize.middleware.datetime import _datetime
 
 serializer = Serializer(middleware={datetime: _datetime.serializer})
