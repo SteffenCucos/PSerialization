@@ -40,7 +40,10 @@ def test_fail_deserialize_nested_class():
     try:
         deserialize(data, klass1)
     except Exception as e:
-        assert str(e) == "klass1 -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
+        error = e
+
+    assert error is not None
+    assert str(error) == "klass1 -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
     
 def test_fail_deserialize_primitives_int():
     data = "Not a number"
@@ -48,7 +51,10 @@ def test_fail_deserialize_primitives_int():
     try:
         deserialize(data, int)
     except Exception as e:
-        assert str(e) == "int -> 'Not a number' |invalid literal for int() with base 10: 'Not a number'|"
+        error = e
+
+    assert error is not None
+    assert str(error) == "int -> 'Not a number' |invalid literal for int() with base 10: 'Not a number'|"
 
 def test_fail_deserialize_primitives_float():
     data = "Not a number"
@@ -56,7 +62,10 @@ def test_fail_deserialize_primitives_float():
     try:
         deserialize(data, float)
     except Exception as e:
-        assert str(e) == "float -> 'Not a number' |could not convert string to float: 'Not a number'|"
+        error = e
+
+    assert error is not None
+    assert str(error) == "float -> 'Not a number' |could not convert string to float: 'Not a number'|"
 
 
 def test_fail_deserialize_list():
@@ -65,10 +74,11 @@ def test_fail_deserialize_list():
     try:
         deserialize(data, list[int])
     except Exception as e:
-        assert str(e) == "list[int][2] -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
+        error = e
 
+    assert error is not None
+    assert str(error) == "list[int][2] -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
 
-# Work on distinction between key/value deserialization errors
 def test_fail_deserialize_dict_value():
     data = {
         "Key1": 123,
@@ -79,8 +89,36 @@ def test_fail_deserialize_dict_value():
     try:
         deserialize(data, dict[str, int])
     except Exception as e:
-        assert str(e) == "dict[str, int] -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
+        error = e
 
+    assert error is not None
+    assert str(error) == "dict[str,int].value -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
+
+def test_fail_deserialize_dict_value_complex():
+    data = {
+        "Key1": {
+            "a": 2,
+            "b": 1.0,
+            "c": {
+                "d": [{
+                    "e": "one"
+                },
+                {
+                    "e": "1"
+                }]
+            }
+        }
+    }
+
+    try:
+        deserialize(data, dict[str, klass1])
+    except Exception as e:
+        error = e
+
+    assert error is not None
+    assert str(error) == "dict[str,klass1].value -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
+
+        
 def test_fail_deserialize_dict_key():
     data = {
         1: 123,
@@ -91,4 +129,7 @@ def test_fail_deserialize_dict_key():
     try:
         deserialize(data, dict[int, int])
     except Exception as e:
-        assert str(e) == "dict[int, int] -> 'Three' |invalid literal for int() with base 10: 'Three'|"
+        error = e
+
+    assert error is not None
+    assert str(error) == "dict[int,int].key -> 'Three' |invalid literal for int() with base 10: 'Three'|"

@@ -1,26 +1,13 @@
-from typing import (
-    Any,
-    Callable,
-    Type,
-    Union,
-    get_type_hints
-)
-
+import dataclasses
+from enum import Enum
 # https://docs.python.org/3/library/types.html#:~:text=class%20types.-,GenericAlias,-(t_origin%2C%20t_args)%C2%B6
 # GenericAlias is the type used for parameterized lists and dicts
 # ie: list[int], dict[str,object], etc
 from types import GenericAlias
-from enum import Enum
+from typing import Any, Callable, Type, Union, get_type_hints
 
-import dataclasses
-
-from .serialization_utils import (
-    is_primitive,
-    is_enum,
-    is_optional,
-    is_union,
-    get_attributes
-)
+from .serialization_utils import (get_attributes, is_enum, is_optional,
+                                  is_primitive, is_union)
 
 
 def type_args_string(type: type):
@@ -53,6 +40,23 @@ class BaseDeserializationException(Exception):
         return self.__repr__()
 
 @dataclasses.dataclass
+class DeserializeDictKeyException(BaseDeserializationException):
+    keyType: type
+    valueType: type
+
+    def __repr__(self):
+        return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].key" + super().__repr__()
+
+@dataclasses.dataclass
+class DeserializeDictValueException(BaseDeserializationException):
+    keyType: type
+    valueType: type
+    key: Any
+
+    def __repr__(self):
+        return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].value" + super().__repr__()
+
+@dataclasses.dataclass
 class DeserializeListException(BaseDeserializationException):
     itemType: type
     index: int
@@ -71,7 +75,7 @@ class DeserializeClassException(BaseDeserializationException):
         if self.field_name:
             s += self.field_name + ":"
         
-        if isinstance(self.error, DeserializeListException):
+        if isinstance(self.error, (DeserializeListException, DeserializeDictKeyException, DeserializeDictValueException)):
             # list errors report a more complete type 
             s += self.error.__repr__()
         else:
@@ -171,8 +175,16 @@ def __deserialize_dict(dict: dict, keyType: type, valueType: type, middleware: d
 
     deserializedDict = {}
     for key, value in dict.items():
-        deserializedKey = __deserialize_inner(key, keyType, middleware, strict)
-        deserializedValue = __deserialize_inner(value, valueType, middleware, strict)
+        try:
+            deserializedKey = __deserialize_inner(key, keyType, middleware, strict)
+        except Exception as e:
+            raise DeserializeDictKeyException(e, key, keyType, valueType)
+
+        try:
+            deserializedValue = __deserialize_inner(value, valueType, middleware, strict)
+        except Exception as e:
+            raise DeserializeDictValueException(e, value, keyType, valueType, key)
+
         deserializedDict[deserializedKey] = deserializedValue
 
     return deserializedDict
