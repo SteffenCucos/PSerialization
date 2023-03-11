@@ -1,8 +1,8 @@
-# PSerialization 
+# PSerialization
 
 Python library for serializing & deserializing python objects.
 
-Out of the box support for "basic" object de/serialization, that is objects that hold all of their state in __ dict __ and have a trivial __ new __.
+Out of the box support for "basic" object de/serialization, that is objects that hold all of their state in ** dict ** and have a trivial ** new **.
 
 For more complicated types like datetime.datetime, users of this library can supply custom middleware to handle de/serializing those types.
 
@@ -10,8 +10,8 @@ Useful for sending python objects to a system that may only be expecting to hand
 
 https://github.com/SteffenCucos/PSerialization
 
-
 ## 'Basic' Object Example
+
 ```python
 from pserialize.serializer import Serializer
 from pserialize.deserializer import Deserializer
@@ -27,23 +27,23 @@ class Shoe():
 
 if __name__ == "__main__":
 	shoes = [Shoe(11, "Good", "Nike"), Shoe(12, "Bad", "Geox")]
-	
+
 	# Serialize a python object into primitives
 	serialized = serializer.serialize(shoes)
-	
+
 	assert serialized == [
 		{ "size": 11, "condition": "Good", "brand": "Nike" },
 		{ "size": 12, "condition": "Bad", "brand": "Geox" }
 	]
-	
+
 	# Build back the object representation just from primitives
 	deserialized = deserializer.deserialize(serialized, list[Shoe])
-	
+
 	assert deserialized == shoes
 ```
 
-
 ## Middleware Example
+
 ```python
 from datetime import datetime
 from pserialize.serializer import Serializer
@@ -79,8 +79,8 @@ if __name__ == "__main__":
 ```
 
 ## Update PyPi Package
-```
-py -m build
-py -m twine upload --repository pypi dist/*
-```
 
+```
+python3 -m build
+python3 -m twine upload --repository pypi dist/*
+```
