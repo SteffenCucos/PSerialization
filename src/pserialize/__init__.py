@@ -1,7 +1,7 @@
 
 from typing import Any, Callable
 
-from .serialize import serialize, serialize_into
+from .serialize import serialize
 from .deserialize import deserialize
 
 

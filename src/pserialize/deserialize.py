@@ -1,10 +1,9 @@
 import dataclasses
-from enum import Enum
 # https://docs.python.org/3/library/types.html#:~:text=class%20types.-,GenericAlias,-(t_origin%2C%20t_args)%C2%B6
 # GenericAlias is the type used for parameterized lists and dicts
 # ie: list[int], dict[str,object], etc
 from types import GenericAlias
-from typing import Any, Callable, Type, Union, get_type_hints
+from typing import Any, Callable, get_type_hints
 
 from .serialization_utils import (get_attributes, is_enum, is_optional,
                                   is_primitive, is_union)
@@ -14,13 +13,14 @@ def type_args_string(type: type):
     if is_union(type):
         name = "Union"
     elif hasattr(type, "__name__"):
-        name = type.__name__ 
+        name = type.__name__
     else:
         name = str(type)
 
     if not hasattr(type, "__args__") or len(type.__args__) == 0:
         return name
     return f"{name}[{', '.join([type_args_string(arg) for arg in type.__args__])}]"
+
 
 @dataclasses.dataclass
 class BaseDeserializationException(Exception):
@@ -33,11 +33,11 @@ class BaseDeserializationException(Exception):
             s += " -> " + str(self.error)
         else:
             s += f"'{self.value}' |{str(self.error)}|"
-        
         return s
 
     def __str__(self):
         return self.__repr__()
+
 
 @dataclasses.dataclass
 class DeserializeDictKeyException(BaseDeserializationException):
@@ -46,6 +46,7 @@ class DeserializeDictKeyException(BaseDeserializationException):
 
     def __repr__(self):
         return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].key" + super().__repr__()
+
 
 @dataclasses.dataclass
 class DeserializeDictValueException(BaseDeserializationException):
@@ -56,6 +57,7 @@ class DeserializeDictValueException(BaseDeserializationException):
     def __repr__(self):
         return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].value" + super().__repr__()
 
+
 @dataclasses.dataclass
 class DeserializeListException(BaseDeserializationException):
     itemType: type
@@ -64,26 +66,28 @@ class DeserializeListException(BaseDeserializationException):
     def __repr__(self):
         return f"{type_args_string(self.itemType)}[{self.index}]" + super().__repr__()
 
+
 @dataclasses.dataclass
 class DeserializeClassException(BaseDeserializationException):
     field_type: type
-    field_name: str 
+    field_name: str
 
     def __repr__(self):
         # Get the type of the field
         s = ""
         if self.field_name:
             s += self.field_name + ":"
-        
         if isinstance(self.error, (DeserializeListException, DeserializeDictKeyException, DeserializeDictValueException)):
-            # list errors report a more complete type 
+            # list errors report a more complete type
             s += self.error.__repr__()
         else:
             s += type_args_string(self.field_type) + super().__repr__()
 
         return s
 
+
 type_of = type
+
 
 def __deserialize_simple_object(dict: dict, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     """
@@ -121,17 +125,21 @@ def __deserialize_simple_object(dict: dict, classType: type, middleware: dict[ty
         # fields that we can't find a type for
         if strict and type is None:
             continue
-        
+
         try:
             cls.__dict__[name] = __deserialize_inner(value, type, middleware, strict) if type else value
         except Exception as e:
             raise DeserializeClassException(e, value, type, name)
 
-    if len(attributes.keys()) + len(type_hints.keys()) > 0:
+    remaining = [name for name in attributes.keys()] + [name for name in type_hints.keys()]
+    if len(remaining) > 0:
         # There are attributes or init_parameters that weren't found in the dictionary
+        for field in remaining:
+            cls.__dict__[field] = None
         pass
 
     return cls
+
 
 def __deserialize_list(lst: list, listType: list[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     """
@@ -156,8 +164,8 @@ def __deserialize_list(lst: list, listType: list[type], middleware: dict[type, C
         except Exception as e:
             raise DeserializeListException(e, value, listType, index)
 
-
     return deserializedList
+
 
 def __deserialize_dict(dict: dict, keyType: type, valueType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     """
@@ -189,6 +197,7 @@ def __deserialize_dict(dict: dict, keyType: type, valueType: type, middleware: d
 
     return deserializedDict
 
+
 def __deserialize_union(value: Any, allowed_types: list[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     """
     Deserializes a value into the first allowed type that succeeds
@@ -211,6 +220,7 @@ def __deserialize_union(value: Any, allowed_types: list[type], middleware: dict[
             pass
 
     raise BaseDeserializationException(Exception("Could not deserialize union"), value)
+
 
 def deserialize(value: Any, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     """
@@ -239,13 +249,13 @@ def deserialize(value: Any, classType: type, middleware: dict[type, Callable[[ob
     except Exception as e:
         raise DeserializeClassException(e, value, classType, None)
 
+
 def __deserialize_inner(value: Any, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
     def deserialize_primitive(classType: type, value: Any):
         try:
             return classType(value)
         except Exception as e:
             raise BaseDeserializationException(e, value)
-            #raise f" = '{value}' |{str(e)}|"
 
     if (deserializer := middleware.get(classType, None)) is not None:
         return deserializer(value, middleware)
