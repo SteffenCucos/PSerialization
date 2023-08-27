@@ -56,4 +56,14 @@ def test_deserialize_store():
     assert deserialized == expected
 
 
+def test_missing_field():
+    expected = ShoeBox(12, None, Condition.BAD)
+
+    json = {"size": 12, "condition": "Bad"}
+
+    deserialized = deserialize(json, ShoeBox)
+
+    assert deserialized == expected
+
+
 

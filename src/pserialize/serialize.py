@@ -23,8 +23,8 @@ def __serialize_basic_object(object: object, middleware: dict[type, Callable[[ob
     Returns:
         dict: The dict representation of the object
     """
-    
     return __serialize_dict(vars(object), middleware)
+
 
 def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]] = {}) -> dict:
     """
@@ -45,6 +45,7 @@ def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]
 
     return serializedDict
 
+
 def __serialize_list(list: list, middleware: dict[type, Callable[[object], type]] = {}) -> list:
     """
     Serializes a list of objects
@@ -61,10 +62,11 @@ def __serialize_list(list: list, middleware: dict[type, Callable[[object], type]
 
     return serializedList
 
+
 def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {}):
     """
     Serializes an object.
-    
+
     Default support for:
         Primitives (int, float, str, None)
         Enums
@@ -96,6 +98,7 @@ def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {})
         return __serialize_dict(value, middleware)
 
     return __serialize_basic_object(value, middleware)
+
 
 def serialize_into(value: Any, c_type: type, s_middleware: dict[type, Callable[[object], type]] = {}, d_middleware: dict[type, Callable[[object], type]] = {}):
     """
