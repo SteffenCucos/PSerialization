@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from typing import Union
 
-from src.pserialize import deserialize, serialize
+from src.pserialize import deserialize
 
 from .models.enum import Number
 

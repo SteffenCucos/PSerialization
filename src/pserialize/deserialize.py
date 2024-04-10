@@ -274,7 +274,6 @@ def __deserialize_inner(value: Any, classType: type, middleware: dict[type, Call
         typeArgs = classType.__args__
         originType = classType.__origin__
         if originType is list:  # list of some type
-            typeArg = typeArgs[0]  # List parameterization only takes 1 argument
             return __deserialize_list(value, classType, middleware, strict)
         else:
             keyType = typeArgs[0]
