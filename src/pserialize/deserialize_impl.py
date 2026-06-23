@@ -1,21 +1,44 @@
 import dataclasses
-from types import GenericAlias
-from typing import Any, Callable, get_type_hints
+from typing import Any, Callable, Literal, Optional, get_args, get_origin, get_type_hints
 
 from .serialization_utils import get_attributes, is_enum, is_optional, is_primitive, is_union
+
+
+DeserializationMiddleware = dict[type, Callable[[object], type]]
+
+
+def __middleware_or_empty(middleware: Optional[DeserializationMiddleware]) -> DeserializationMiddleware:
+    return middleware if middleware is not None else {}
+
+
+def __is_literal(type_hint: type) -> bool:
+    return get_origin(type_hint) is Literal
+
+
+def __is_type_var(type_hint: type) -> bool:
+    return hasattr(type_hint, "__constraints__") and hasattr(type_hint, "__bound__")
+
+
+def __literal_matches(value: Any, literal_value: Any) -> bool:
+    return value == literal_value and type(value) is type(literal_value)
 
 
 def type_args_string(type: type):
     if is_union(type):
         name = "Union"
+    elif __is_literal(type):
+        name = "Literal"
+    elif __is_type_var(type):
+        name = getattr(type, "__name__", str(type))
     elif hasattr(type, "__name__"):
         name = type.__name__
     else:
         name = str(type)
 
-    if not hasattr(type, "__args__") or len(type.__args__) == 0:
+    args = get_args(type)
+    if len(args) == 0:
         return name
-    return f"{name}[{', '.join([type_args_string(arg) for arg in type.__args__])}]"
+    return f"{name}[{', '.join([type_args_string(arg) for arg in args])}]"
 
 
 @dataclasses.dataclass
@@ -79,7 +102,8 @@ class DeserializeClassException(BaseDeserializationException):
         return s
 
 
-def __deserialize_simple_object(data: dict, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_simple_object(data: dict, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    middleware = __middleware_or_empty(middleware)
     attributes = get_attributes(classType)
     type_hints = get_type_hints(classType.__init__)
     if dataclasses.is_dataclass(classType):
@@ -106,7 +130,8 @@ def __deserialize_simple_object(data: dict, classType: type, middleware: dict[ty
     return cls
 
 
-def __deserialize_collection_items(values, collectionType: type, itemType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_collection_items(values, collectionType: type, itemType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    middleware = __middleware_or_empty(middleware)
     deserialized = []
     for index in range(len(values)):
         value = values[index]
@@ -117,13 +142,15 @@ def __deserialize_collection_items(values, collectionType: type, itemType: type,
     return deserialized
 
 
-def __deserialize_list(values: list, listType: list[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
-    typeArg = listType.__args__[0]
+def __deserialize_list(values: list, listType: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    typeArg = get_args(listType)[0] if get_args(listType) else Any
     return __deserialize_collection_items(values, listType, typeArg, middleware, strict)
 
 
-def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
-    typeArgs = tupleType.__args__
+def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    typeArgs = get_args(tupleType)
+    if len(typeArgs) == 0:
+        return tuple(values)
     if len(typeArgs) == 2 and typeArgs[1] is Ellipsis:
         return tuple(__deserialize_collection_items(values, tupleType, typeArgs[0], middleware, strict))
 
@@ -139,17 +166,18 @@ def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: dict[t
     return tuple(deserialized)
 
 
-def __deserialize_set(values: list, setType: set[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
-    typeArg = setType.__args__[0]
+def __deserialize_set(values: list, setType: set[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    typeArg = get_args(setType)[0] if get_args(setType) else Any
     return set(__deserialize_collection_items(values, setType, typeArg, middleware, strict))
 
 
-def __deserialize_frozenset(values: list, frozenSetType: frozenset[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
-    typeArg = frozenSetType.__args__[0]
+def __deserialize_frozenset(values: list, frozenSetType: frozenset[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    typeArg = get_args(frozenSetType)[0] if get_args(frozenSetType) else Any
     return frozenset(__deserialize_collection_items(values, frozenSetType, typeArg, middleware, strict))
 
 
-def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    middleware = __middleware_or_empty(middleware)
     deserializedDict = {}
     for key, value in data.items():
         try:
@@ -167,10 +195,11 @@ def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: d
     return deserializedDict
 
 
-def __deserialize_union(value: Any, allowed_types: list[type], middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_union(value: Any, allowed_types: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    middleware = __middleware_or_empty(middleware)
     value_type = type(value)
     for allowed_type in allowed_types:
-        if value_type is allowed_type:
+        if allowed_type is Any or value_type is allowed_type:
             return value
 
     for allowed_type in allowed_types:
@@ -182,20 +211,48 @@ def __deserialize_union(value: Any, allowed_types: list[type], middleware: dict[
     raise BaseDeserializationException(Exception("Could not deserialize union"), value)
 
 
-def deserialize(value: Any, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_literal(value: Any, literalType: type):
+    allowed_values = get_args(literalType)
+    for literal_value in allowed_values:
+        if __literal_matches(value, literal_value):
+            return value
+    raise BaseDeserializationException(Exception(f"Expected one of {allowed_values}"), value)
+
+
+def __deserialize_type_var(value: Any, typeVar: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    constraints = getattr(typeVar, "__constraints__", ())
+    if constraints:
+        return __deserialize_union(value, constraints, middleware, strict)
+
+    bound = getattr(typeVar, "__bound__", None)
+    if bound is not None:
+        return __deserialize_inner(value, bound, middleware, strict)
+
+    return value
+
+
+def deserialize(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
     try:
-        return __deserialize_inner(value, classType, middleware, strict)
+        return __deserialize_inner(value, classType, __middleware_or_empty(middleware), strict)
     except Exception as e:
         raise DeserializeClassException(e, value, classType, None)
 
 
-def __deserialize_inner(value: Any, classType: type, middleware: dict[type, Callable[[object], type]] = {}, strict: bool = False):
+def __deserialize_inner(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+    middleware = __middleware_or_empty(middleware)
+
     def deserialize_primitive(classType: type, value: Any):
         try:
             return classType(value)
         except Exception as e:
             raise BaseDeserializationException(e, value)
 
+    if classType is Any:
+        return value
+    if __is_literal(classType):
+        return __deserialize_literal(value, classType)
+    if __is_type_var(classType):
+        return __deserialize_type_var(value, classType, middleware, strict)
     if (deserializer := middleware.get(classType, None)) is not None:
         return deserializer(value, middleware)
     if value is None:
@@ -205,24 +262,24 @@ def __deserialize_inner(value: Any, classType: type, middleware: dict[type, Call
     if is_enum(classType):
         return deserialize_primitive(classType, value)
     if is_optional(classType):
-        realType = classType.__args__[0]
+        realType = [arg for arg in get_args(classType) if arg is not type(None)][0]
         return __deserialize_inner(value, realType, middleware, strict)
-    if isinstance(classType, GenericAlias):
-        typeArgs = classType.__args__
-        originType = classType.__origin__
-        if originType is list:
-            return __deserialize_list(value, classType, middleware, strict)
-        if originType is tuple:
-            return __deserialize_tuple(value, classType, middleware, strict)
-        if originType is set:
-            return __deserialize_set(value, classType, middleware, strict)
-        if originType is frozenset:
-            return __deserialize_frozenset(value, classType, middleware, strict)
-        if originType is dict:
-            keyType = typeArgs[0]
-            valueType = typeArgs[1]
-            return __deserialize_dict(value, keyType, valueType, middleware, strict)
+
+    originType = get_origin(classType)
+    typeArgs = get_args(classType)
+    if originType is list:
+        return __deserialize_list(value, classType, middleware, strict)
+    if originType is tuple:
+        return __deserialize_tuple(value, classType, middleware, strict)
+    if originType is set:
+        return __deserialize_set(value, classType, middleware, strict)
+    if originType is frozenset:
+        return __deserialize_frozenset(value, classType, middleware, strict)
+    if originType is dict:
+        keyType = typeArgs[0] if len(typeArgs) > 0 else Any
+        valueType = typeArgs[1] if len(typeArgs) > 1 else Any
+        return __deserialize_dict(value, keyType, valueType, middleware, strict)
     if is_union(classType):
-        return __deserialize_union(value, classType.__args__, middleware, strict)
+        return __deserialize_union(value, get_args(classType), middleware, strict)
 
     return __deserialize_simple_object(value, classType, middleware, strict)
