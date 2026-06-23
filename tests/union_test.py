@@ -1,10 +1,10 @@
-
 from typing import Union
 from dataclasses import dataclass
 
 from src.pserialize import serialize, deserialize
 
-def test_union():
+
+def test_union_prefers_existing_value_type_before_coercion():
 
     @dataclass
     class A:
@@ -15,16 +15,22 @@ def test_union():
     serialized = serialize(a_list)
 
     assert serialized == [
-        {"a":1},
-        {"a":"4"},
-        {"a":"four"}
+        {"a": 1},
+        {"a": "4"},
+        {"a": "four"}
     ]
 
     deserialized = deserialize(serialized, list[A])
-    # "4" can be coerced to int(4), and since int appears 
-    # in the Union type first it takes precedent over str
-    expected = [A(1), A(4.0), A("four")]
 
-    assert a_list != expected
-    assert deserialized == expected
+    assert deserialized == a_list
 
+
+def test_union_still_coerces_when_value_is_not_already_allowed_type():
+
+    @dataclass
+    class A:
+        a: Union[int, str]
+
+    deserialized = deserialize({"a": 4.0}, A)
+
+    assert deserialized == A(4)
