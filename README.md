@@ -1,16 +1,32 @@
 # PSerialization
 
-Python library for serializing & deserializing python objects.
+A Python library for serializing and deserializing Python objects into primitive data structures, then reconstructing typed Python objects from those primitives.
 
-Out of the box support for "basic" object de/serialization, that is objects that hold all of their state in ** dict ** and have a trivial ** new **.
+This is useful when moving Python objects through JSON-like systems, configuration files, or document databases where type information is not preserved automatically.
 
-For more complicated types like datetime.datetime, users of this library can supply custom middleware to handle de/serializing those types.
+## Features
 
-Useful for sending python objects to a system that may only be expecting to handle primitive types, as well as reconstructing python objects from systems that lack type information. I personally use this for editing/loading configuration files stored as json, and for loading objects from nosql dbs like MongoDB.
+- Serialize simple Python objects into primitive structures.
+- Deserialize primitive structures back into typed objects.
+- Support lists and nested object graphs.
+- Allow custom middleware for special types such as `datetime.datetime`.
 
-https://github.com/SteffenCucos/PSerialization
+## Installation
 
-## 'Basic' Object Example
+For local development:
+
+```bash
+pip install -e .
+```
+
+For package publishing/build work:
+
+```bash
+python3 -m build
+python3 -m twine upload --repository pypi dist/*
+```
+
+## Basic object example
 
 ```python
 from pserialize.serializer import Serializer
@@ -19,68 +35,55 @@ from pserialize.deserializer import Deserializer
 serializer = Serializer()
 deserializer = Deserializer()
 
-class Shoe():
-	def __init__(self, size: int, condition: str, brand: str):
-		self.size = size
-		self.condition = condition
-		self.brand = brand
+class Shoe:
+    def __init__(self, size: int, condition: str, brand: str):
+        self.size = size
+        self.condition = condition
+        self.brand = brand
 
-if __name__ == "__main__":
-	shoes = [Shoe(11, "Good", "Nike"), Shoe(12, "Bad", "Geox")]
+shoes = [Shoe(11, "Good", "Nike"), Shoe(12, "Bad", "Geox")]
 
-	# Serialize a python object into primitives
-	serialized = serializer.serialize(shoes)
+serialized = serializer.serialize(shoes)
+assert serialized == [
+    {"size": 11, "condition": "Good", "brand": "Nike"},
+    {"size": 12, "condition": "Bad", "brand": "Geox"},
+]
 
-	assert serialized == [
-		{ "size": 11, "condition": "Good", "brand": "Nike" },
-		{ "size": 12, "condition": "Bad", "brand": "Geox" }
-	]
-
-	# Build back the object representation just from primitives
-	deserialized = deserializer.deserialize(serialized, list[Shoe])
-
-	assert deserialized == shoes
+deserialized = deserializer.deserialize(serialized, list[Shoe])
 ```
 
-## Middleware Example
+## Middleware example
 
 ```python
 from datetime import datetime
 from pserialize.serializer import Serializer
 from pserialize.deserializer import Deserializer
 
-def serialize_datetime(date: datetime):
-	return repr(date)
+def serialize_datetime(value: datetime):
+    return repr(value)
 
-def deserialize_date(value: object):
-	assert type(value) is str
-
-	arg_str = value.split("(")[1]
-	arg_str = arg_str.replace(")", "")
-	args = arg_str.strip(" ").split(",")
-	args = [int(arg) for arg in args]
-
-	return datetime(*args)
+def deserialize_datetime(value: object):
+    assert isinstance(value, str)
+    arg_str = value.split("(")[1].replace(")", "")
+    args = [int(arg) for arg in arg_str.strip(" ").split(",")]
+    return datetime(*args)
 
 serializer = Serializer(middleware={datetime: serialize_datetime})
 deserializer = Deserializer(middleware={datetime: deserialize_datetime})
 
-if __name__ == "__main__":
-	date = datetime(2022, 7, 25, 11, 3, 44, 21000)
+date = datetime(2022, 7, 25, 11, 3, 44, 21000)
+serialized = serializer.serialize(date)
+deserialized = deserializer.deserialize(serialized, datetime)
 
-	# Serialized using the custom function
-	serialized = serializer.serialize(date)
-	assert serialized == "datetime.datetime(2022, 7, 25, 11, 3, 44, 21000)"
-
-	# Deserialized back into the correct type
-	deserialized = deserializer.deserialize(serialized, datetime)
-	assert deserialized == date
-
+assert deserialized == date
 ```
 
-## Update PyPi Package
+## Development notes
 
-```
-python3 -m build
-python3 -m twine upload --repository pypi dist/*
-```
+- Add tests for custom middleware behavior before changing serialization logic.
+- Document supported Python versions once the package metadata is finalized.
+- Keep examples in sync with the package API.
+
+## License
+
+No license has been selected yet.
