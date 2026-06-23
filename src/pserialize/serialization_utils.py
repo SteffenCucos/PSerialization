@@ -1,4 +1,3 @@
-
 from typing import (
     Union,
     get_args,
@@ -8,6 +7,7 @@ from typing import (
 from enum import Enum
 
 import inspect
+import types
 
 primitiveTypes = set([bool, int, float, str])
 
@@ -35,7 +35,10 @@ def is_optional(typeT: type):
 
 
 def is_union(type: type):
-    return get_origin(type) is Union
+    """Return True for typing.Union and Python 3.10 PEP 604 unions."""
+    origin = get_origin(type)
+    union_type = getattr(types, "UnionType", None)
+    return origin is Union or (union_type is not None and origin is union_type)
 
 
 def get_type_hierarchy(classType: type):
