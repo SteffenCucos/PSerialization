@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, Optional, Union
 
 from .deserialize import deserialize
 
@@ -24,7 +24,7 @@ def __track_reference(value: object, visited: set[int]) -> int:
     return reference
 
 
-def __serialize_basic_object(object: object, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> dict:
+def __serialize_basic_object(object: object, middleware: dict[type, Callable[[object], type]] = {}, visited: Optional[set[int]] = None) -> dict:
     """
     Serializes an object using the fields set on its __dict__
 
@@ -42,7 +42,7 @@ def __serialize_basic_object(object: object, middleware: dict[type, Callable[[ob
         visited.remove(reference)
 
 
-def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> dict:
+def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]] = {}, visited: Optional[set[int]] = None) -> dict:
     """
     Serializes a dictionary
 
@@ -66,7 +66,7 @@ def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]
         visited.remove(reference)
 
 
-def __serialize_iterable(iterable: list | tuple | set | frozenset, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> list:
+def __serialize_iterable(iterable: Union[list, tuple, set, frozenset], middleware: dict[type, Callable[[object], type]] = {}, visited: Optional[set[int]] = None) -> list:
     """
     Serializes an iterable collection as a list of serialized elements.
 
@@ -113,7 +113,7 @@ def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {})
     return _serialize_inner(value, middleware, set())
 
 
-def _serialize_inner(value: Any, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None):
+def _serialize_inner(value: Any, middleware: dict[type, Callable[[object], type]] = {}, visited: Optional[set[int]] = None):
     visited = visited if visited is not None else set()
 
     classType = type(value)
