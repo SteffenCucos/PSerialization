@@ -1,1 +1,5 @@
-tuple set frozenset
+def __deserialize_union(value, allowed_types):
+    value_type = type(value)
+    for allowed_type in allowed_types:
+        if value_type is allowed_type:
+            return value
