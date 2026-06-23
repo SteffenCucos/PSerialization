@@ -1,4 +1,3 @@
-
 from typing import Any, Callable
 
 from .deserialize import deserialize
@@ -13,7 +12,19 @@ from .serialization_utils import (
 # Keep serializer class to wrap the static serialize and keep track of middleware
 
 
-def __serialize_basic_object(object: object, middleware: dict[type, Callable[[object], type]] = {}) -> dict:
+class SerializeCycleException(ValueError):
+    """Raised when serialization encounters a cyclic object graph."""
+
+
+def __track_reference(value: object, visited: set[int]) -> int:
+    reference = id(value)
+    if reference in visited:
+        raise SerializeCycleException("Cannot serialize cyclic object graph")
+    visited.add(reference)
+    return reference
+
+
+def __serialize_basic_object(object: object, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> dict:
     """
     Serializes an object using the fields set on its __dict__
 
@@ -23,10 +34,15 @@ def __serialize_basic_object(object: object, middleware: dict[type, Callable[[ob
     Returns:
         dict: The dict representation of the object
     """
-    return __serialize_dict(vars(object), middleware)
+    visited = visited if visited is not None else set()
+    reference = __track_reference(object, visited)
+    try:
+        return __serialize_dict(vars(object), middleware, visited)
+    finally:
+        visited.remove(reference)
 
 
-def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]] = {}) -> dict:
+def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> dict:
     """
     Serializes a dictionary
 
@@ -36,31 +52,40 @@ def __serialize_dict(dict: dict, middleware: dict[type, Callable[[object], type]
     Returns:
         dict: The serialized dictionary
     """
+    visited = visited if visited is not None else set()
+    reference = __track_reference(dict, visited)
+    try:
+        serializedDict = {}
+        for key, value in dict.items():
+            serializedKey = _serialize_inner(key, middleware, visited)
+            serializedValue = _serialize_inner(value, middleware, visited)
+            serializedDict[serializedKey] = serializedValue
 
-    serializedDict = {}
-    for key, value in dict.items():
-        serializedKey = serialize(key, middleware)
-        serializedValue = serialize(value, middleware)
-        serializedDict[serializedKey] = serializedValue
-
-    return serializedDict
+        return serializedDict
+    finally:
+        visited.remove(reference)
 
 
-def __serialize_list(list: list, middleware: dict[type, Callable[[object], type]] = {}) -> list:
+def __serialize_iterable(iterable: list | tuple | set | frozenset, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None) -> list:
     """
-    Serializes a list of objects
+    Serializes an iterable collection as a list of serialized elements.
 
     Args:
-        list (list): The list to serialize
+        iterable (list | tuple | set | frozenset): The collection to serialize
 
     Returns:
-        list: The serialized list
+        list: The serialized collection elements
     """
-    serializedList = []
-    for element in list:
-        serializedList.append(serialize(element, middleware))
+    visited = visited if visited is not None else set()
+    reference = __track_reference(iterable, visited)
+    try:
+        serializedList = []
+        for element in iterable:
+            serializedList.append(_serialize_inner(element, middleware, visited))
 
-    return serializedList
+        return serializedList
+    finally:
+        visited.remove(reference)
 
 
 def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {}):
@@ -71,6 +96,9 @@ def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {})
         Primitives (int, float, str, None)
         Enums
         Lists
+        Tuples
+        Sets
+        Frozensets
         Dicts
         Basic objects
 
@@ -82,6 +110,11 @@ def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {})
     Returns:
         object: The serialized value
     """
+    return _serialize_inner(value, middleware, set())
+
+
+def _serialize_inner(value: Any, middleware: dict[type, Callable[[object], type]] = {}, visited: set[int] | None = None):
+    visited = visited if visited is not None else set()
 
     classType = type(value)
     if (serializer := middleware.get(classType, None)) is not None:
@@ -91,13 +124,13 @@ def serialize(value: Any, middleware: dict[type, Callable[[object], type]] = {})
     if is_primitive(classType):
         return value
     if is_enum(classType):
-        return serialize(value.value, middleware)
-    if classType is list:
-        return __serialize_list(value, middleware)
+        return _serialize_inner(value.value, middleware, visited)
+    if classType in (list, tuple, set, frozenset):
+        return __serialize_iterable(value, middleware, visited)
     if classType is dict:
-        return __serialize_dict(value, middleware)
+        return __serialize_dict(value, middleware, visited)
 
-    return __serialize_basic_object(value, middleware)
+    return __serialize_basic_object(value, middleware, visited)
 
 
 def serialize_into(value: Any, c_type: type, s_middleware: dict[type, Callable[[object], type]] = {}, d_middleware: dict[type, Callable[[object], type]] = {}):
