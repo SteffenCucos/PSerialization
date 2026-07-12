@@ -1,3 +1,4 @@
+from collections.abc import Mapping, Sequence, Set
 from typing import Any, Callable, Optional, Union
 
 from .deserialize import deserialize
@@ -13,6 +14,7 @@ from .serialization_utils import (
 
 
 SerializationMiddleware = dict[type, Callable[[object], type]]
+_TEXT_LIKE_SEQUENCE_TYPES = (str, bytes, bytearray, memoryview)
 
 
 class SerializeCycleException(ValueError):
@@ -50,22 +52,14 @@ def __serialize_basic_object(object: object, middleware: Optional[SerializationM
         visited.remove(reference)
 
 
-def __serialize_dict(dict: dict, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> dict:
-    """
-    Serializes a dictionary
-
-    Args:
-        dict (dict): The dictionary to serialize
-
-    Returns:
-        dict: The serialized dictionary
-    """
+def __serialize_dict(mapping: Mapping, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> dict:
+    """Serialize a mapping while preserving all entries."""
     middleware = __middleware_or_empty(middleware)
     visited = visited if visited is not None else set()
-    reference = __track_reference(dict, visited)
+    reference = __track_reference(mapping, visited)
     try:
         serializedDict = {}
-        for key, value in dict.items():
+        for key, value in mapping.items():
             serializedKey = _serialize_inner(key, middleware, visited)
             serializedValue = _serialize_inner(value, middleware, visited)
             serializedDict[serializedKey] = serializedValue
@@ -75,16 +69,8 @@ def __serialize_dict(dict: dict, middleware: Optional[SerializationMiddleware] =
         visited.remove(reference)
 
 
-def __serialize_iterable(iterable: Union[list, tuple, set, frozenset], middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> list:
-    """
-    Serializes an iterable collection as a list of serialized elements.
-
-    Args:
-        iterable (list | tuple | set | frozenset): The collection to serialize
-
-    Returns:
-        list: The serialized collection elements
-    """
+def __serialize_iterable(iterable, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> list:
+    """Serialize a sequence or set as a list of serialized elements."""
     middleware = __middleware_or_empty(middleware)
     visited = visited if visited is not None else set()
     reference = __track_reference(iterable, visited)
@@ -105,11 +91,9 @@ def serialize(value: Any, middleware: Optional[SerializationMiddleware] = None):
     Default support for:
         Primitives (int, float, str, None)
         Enums
-        Lists
-        Tuples
-        Sets
-        Frozensets
-        Dicts
+        Mapping implementations and subclasses
+        Non-text sequence implementations and subclasses
+        Set implementations and subclasses
         Basic objects
 
     Any custom serialization logic can be added using middleware
@@ -136,10 +120,12 @@ def _serialize_inner(value: Any, middleware: Optional[SerializationMiddleware] =
         return value
     if is_enum(classType):
         return _serialize_inner(value.value, middleware, visited)
-    if classType in (list, tuple, set, frozenset):
-        return __serialize_iterable(value, middleware, visited)
-    if classType is dict:
+    if isinstance(value, Mapping):
         return __serialize_dict(value, middleware, visited)
+    if isinstance(value, Sequence) and not isinstance(value, _TEXT_LIKE_SEQUENCE_TYPES):
+        return __serialize_iterable(value, middleware, visited)
+    if isinstance(value, Set):
+        return __serialize_iterable(value, middleware, visited)
 
     return __serialize_basic_object(value, middleware, visited)
 
