@@ -6,6 +6,8 @@ from .deserialize_impl import (
     DeserializeDictKeyException,
     DeserializeDictValueException,
     DeserializeListException,
+    UnknownFieldException,
+    UnknownFieldPolicy,
     deserialize,
     type_args_string,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "DeserializeDictKeyException",
     "DeserializeDictValueException",
     "DeserializeListException",
+    "UnknownFieldException",
+    "UnknownFieldPolicy",
     "deserialize",
     "type_args_string",
 ]
