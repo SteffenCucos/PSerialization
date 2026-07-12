@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
-from src.pserialize import deserialize, serialize
+import pytest
+
+from src.pserialize import MissingRequiredFieldException, deserialize, serialize
+from src.pserialize.deserialize import DeserializeClassException
 
 from .models.enum import Number
 
@@ -38,16 +41,17 @@ def test_nested_list_dict_and_enum_round_trip():
     assert deserialized == value
 
 
-def test_missing_fields_are_set_to_none():
+def test_missing_required_fields_are_rejected():
     @dataclass
     class User:
         id: int
         name: str
 
-    deserialized = deserialize({"id": 1}, User)
+    with pytest.raises(DeserializeClassException) as captured:
+        deserialize({"id": 1}, User)
 
-    assert deserialized.id == 1
-    assert deserialized.name is None
+    assert isinstance(captured.value.error, MissingRequiredFieldException)
+    assert captured.value.error.field_name == "name"
 
 
 def test_strict_mode_ignores_extra_fields():
