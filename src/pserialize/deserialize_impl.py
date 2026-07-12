@@ -2,6 +2,7 @@ import dataclasses
 import inspect
 import math
 import re
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from typing import Any, Callable, Literal, Optional, get_args, get_origin, get_type_hints
 
@@ -93,8 +94,12 @@ def type_args_string(type: type):
     return f"{name}[{', '.join([type_args_string(arg) for arg in args])}]"
 
 
+class DeserializationMismatch(ValueError):
+    """Expected incompatibility between an input value and a target type."""
+
+
 @dataclasses.dataclass
-class BaseDeserializationException(Exception):
+class BaseDeserializationException(DeserializationMismatch):
     error: Exception
     value: Any
 
@@ -111,7 +116,7 @@ class BaseDeserializationException(Exception):
 
 
 @dataclasses.dataclass
-class UnknownFieldException(ValueError):
+class UnknownFieldException(DeserializationMismatch):
     field_name: str
     class_type: type
 
@@ -120,7 +125,7 @@ class UnknownFieldException(ValueError):
 
 
 @dataclasses.dataclass
-class NullNotAllowedException(ValueError):
+class NullNotAllowedException(DeserializationMismatch):
     target_type: type
 
     def __str__(self):
@@ -128,7 +133,7 @@ class NullNotAllowedException(ValueError):
 
 
 @dataclasses.dataclass
-class MissingRequiredFieldException(ValueError):
+class MissingRequiredFieldException(DeserializationMismatch):
     field_name: str
     class_type: type
 
@@ -155,6 +160,25 @@ class TypeMismatchException(BaseDeserializationException):
         if reason:
             message = f"{message}: {reason}"
 
+        super().__init__(ValueError(message), value)
+
+
+class UnionDeserializationException(BaseDeserializationException):
+    """Raised when every union branch rejects the input as incompatible."""
+
+    def __init__(
+        self,
+        value: Any,
+        allowed_types: tuple[type, ...],
+        branch_errors: tuple[tuple[type, DeserializationMismatch], ...],
+    ):
+        self.allowed_types = allowed_types
+        self.branch_errors = branch_errors
+        branches = "; ".join(
+            f"{type_args_string(branch_type)}: {branch_error}"
+            for branch_type, branch_error in branch_errors
+        )
+        message = f"No union branch matched ({branches})"
         super().__init__(ValueError(message), value)
 
 
@@ -365,7 +389,9 @@ def __deserialize_primitive(class_type: type, value: Any):
 
     try:
         return class_type(converted)
-    except Exception as error:
+    except DeserializationMismatch:
+        raise
+    except (TypeError, ValueError) as error:
         raise TypeMismatchException(
             value,
             class_type,
@@ -377,7 +403,9 @@ def __deserialize_primitive(class_type: type, value: Any):
 def __deserialize_enum(class_type: type, value: Any):
     try:
         return class_type(value)
-    except Exception as error:
+    except DeserializationMismatch:
+        raise
+    except (TypeError, ValueError) as error:
         raise BaseDeserializationException(error, value) from error
 
 
@@ -400,6 +428,29 @@ def __get_type_hints_or_empty(target: Any) -> dict[str, type]:
         return get_type_hints(target)
     except (NameError, TypeError):
         return {}
+
+
+def __require_mapping_input(value: Any, target_type: type):
+    if not isinstance(value, Mapping):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a mapping-shaped input",
+        )
+
+
+def __require_sequence_input(value: Any, target_type: type):
+    if not isinstance(value, Sequence) or isinstance(
+        value,
+        (str, bytes, bytearray, memoryview),
+    ):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a non-text sequence input",
+        )
 
 
 def __construct_object(
@@ -435,6 +486,7 @@ def __deserialize_simple_object(
     unknown_fields: UnknownFieldPolicy = "reject",
 ):
     middleware = __middleware_or_empty(middleware)
+    __require_mapping_input(data, classType)
     attributes = get_attributes(classType)
     class_type_hints = __get_type_hints_or_empty(classType)
     init_type_hints = __get_type_hints_or_empty(classType.__init__)
@@ -483,7 +535,7 @@ def __deserialize_simple_object(
                 if field_type
                 else value
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeClassException(error, value, field_type, name) from error
 
         if name in parameter_names:
@@ -496,7 +548,7 @@ def __deserialize_simple_object(
     for name, value in post_construction_values.items():
         try:
             setattr(cls, name, value)
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeClassException(
                 error,
                 value,
@@ -515,6 +567,7 @@ def __deserialize_collection_items(
     unknown_fields: UnknownFieldPolicy = "reject",
 ):
     middleware = __middleware_or_empty(middleware)
+    __require_sequence_input(values, collectionType)
     deserialized = []
     for index in range(len(values)):
         value = values[index]
@@ -522,7 +575,7 @@ def __deserialize_collection_items(
             deserialized.append(
                 __deserialize_inner(value, itemType, middleware, unknown_fields)
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeListException(
                 error,
                 value,
@@ -554,6 +607,7 @@ def __deserialize_tuple(
     middleware: Optional[DeserializationMiddleware] = None,
     unknown_fields: UnknownFieldPolicy = "reject",
 ):
+    __require_sequence_input(values, tupleType)
     typeArgs = get_args(tupleType)
     if len(typeArgs) == 0:
         return tuple(values)
@@ -587,7 +641,7 @@ def __deserialize_tuple(
                     unknown_fields,
                 )
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeListException(
                 error,
                 values[index],
@@ -641,6 +695,7 @@ def __deserialize_dict(
     unknown_fields: UnknownFieldPolicy = "reject",
 ):
     middleware = __middleware_or_empty(middleware)
+    __require_mapping_input(data, dict[keyType, valueType])
     deserializedDict = {}
     for key, value in data.items():
         try:
@@ -650,7 +705,7 @@ def __deserialize_dict(
                 middleware,
                 unknown_fields,
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeDictKeyException(
                 error,
                 key,
@@ -665,7 +720,7 @@ def __deserialize_dict(
                 middleware,
                 unknown_fields,
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeDictValueException(
                 error,
                 value,
@@ -686,11 +741,13 @@ def __deserialize_union(
     unknown_fields: UnknownFieldPolicy = "reject",
 ):
     middleware = __middleware_or_empty(middleware)
+    allowed_types = tuple(allowed_types)
     value_type = type(value)
     for allowed_type in allowed_types:
         if allowed_type is Any or value_type is allowed_type:
             return value
 
+    branch_errors = []
     for allowed_type in allowed_types:
         try:
             return __deserialize_inner(
@@ -699,14 +756,13 @@ def __deserialize_union(
                 middleware,
                 unknown_fields,
             )
-        except Exception:
-            # F-08 will narrow this to expected mismatch exceptions and retain
-            # structured branch failures.
-            pass
+        except DeserializationMismatch as error:
+            branch_errors.append((allowed_type, error))
 
-    raise BaseDeserializationException(
-        Exception("Could not deserialize union"),
+    raise UnionDeserializationException(
         value,
+        allowed_types,
+        tuple(branch_errors),
     )
 
 
@@ -772,7 +828,7 @@ def deserialize(
                 __middleware_or_empty(middleware),
                 resolved_unknown_fields,
             )
-        except Exception as error:
+        except DeserializationMismatch as error:
             raise DeserializeClassException(
                 error,
                 value,

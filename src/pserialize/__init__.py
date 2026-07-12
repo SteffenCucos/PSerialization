@@ -12,9 +12,11 @@ from typing import Any, Callable, Optional
 
 from .serialize import serialize
 from .deserialize import (
+    DeserializationMismatch,
     MissingRequiredFieldException,
     NullNotAllowedException,
     TypeMismatchException,
+    UnionDeserializationException,
     UnknownFieldException,
     UnknownFieldPolicy,
     deserialize,
@@ -61,9 +63,11 @@ class Deserializer:
 __all__ = [
     "Serializer",
     "Deserializer",
+    "DeserializationMismatch",
     "MissingRequiredFieldException",
     "NullNotAllowedException",
     "TypeMismatchException",
+    "UnionDeserializationException",
     "UnknownFieldException",
     "UnknownFieldPolicy",
     "serialize",

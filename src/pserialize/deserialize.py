@@ -2,6 +2,7 @@
 
 from .deserialize_impl import (
     BaseDeserializationException,
+    DeserializationMismatch,
     DeserializeClassException,
     DeserializeDictKeyException,
     DeserializeDictValueException,
@@ -9,6 +10,7 @@ from .deserialize_impl import (
     MissingRequiredFieldException,
     NullNotAllowedException,
     TypeMismatchException,
+    UnionDeserializationException,
     UnknownFieldException,
     UnknownFieldPolicy,
     deserialize,
@@ -17,6 +19,7 @@ from .deserialize_impl import (
 
 __all__ = [
     "BaseDeserializationException",
+    "DeserializationMismatch",
     "DeserializeClassException",
     "DeserializeDictKeyException",
     "DeserializeDictValueException",
@@ -24,6 +27,7 @@ __all__ = [
     "MissingRequiredFieldException",
     "NullNotAllowedException",
     "TypeMismatchException",
+    "UnionDeserializationException",
     "UnknownFieldException",
     "UnknownFieldPolicy",
     "deserialize",
