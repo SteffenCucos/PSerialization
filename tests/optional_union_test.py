@@ -30,7 +30,7 @@ def test_optional_union_can_deserialize_object_after_earlier_branch_fails():
 
     target_type = Union[int, Payload, None]
 
-    result = deserialize({"value": "4"}, target_type)
+    result = deserialize({"value": "4"}, target_type, coerce=True)
 
     assert result == Payload(4)
 
@@ -57,7 +57,7 @@ def test_optional_union_works_inside_collection():
 
 
 def test_simple_optional_behavior_is_unchanged():
-    assert deserialize("4", Optional[int]) == 4
+    assert deserialize("4", Optional[int], coerce=True) == 4
     assert deserialize(None, Optional[int]) is None
 
 
@@ -78,4 +78,4 @@ def test_pep_604_optional_union_can_reach_object_branch():
 
     target_type = eval("int | Payload | None")
 
-    assert deserialize({"value": "4"}, target_type) == Payload(4)
+    assert deserialize({"value": "4"}, target_type, coerce=True) == Payload(4)
