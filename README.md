@@ -54,19 +54,30 @@ deserialized = deserializer.deserialize(serialized, list[Shoe])
 
 ## Middleware example
 
+Middleware always receives two arguments: the value and a context object. The
+context is also a read-only view of the middleware registry. Use
+`context.serialize(...)` or `context.deserialize(...)` for recursive work so
+the active middleware and configuration are preserved.
+
 ```python
 from datetime import datetime
 from pserialize.serializer import Serializer
 from pserialize.deserializer import Deserializer
+from pserialize import DeserializationContext, SerializationContext
 
-def serialize_datetime(value: datetime):
-    return repr(value)
+def serialize_datetime(
+    value: datetime,
+    context: SerializationContext,
+) -> str:
+    return value.isoformat()
 
-def deserialize_datetime(value: object):
-    assert isinstance(value, str)
-    arg_str = value.split("(")[1].replace(")", "")
-    args = [int(arg) for arg in arg_str.strip(" ").split(",")]
-    return datetime(*args)
+def deserialize_datetime(
+    value: object,
+    context: DeserializationContext,
+) -> datetime:
+    if not isinstance(value, str):
+        raise TypeError("datetime input must be a string")
+    return datetime.fromisoformat(value)
 
 serializer = Serializer(middleware={datetime: serialize_datetime})
 deserializer = Deserializer(middleware={datetime: deserialize_datetime})
@@ -75,6 +86,7 @@ date = datetime(2022, 7, 25, 11, 3, 44, 21000)
 serialized = serializer.serialize(date)
 deserialized = deserializer.deserialize(serialized, datetime)
 
+assert serialized == "2022-07-25T11:03:44.021000"
 assert deserialized == date
 ```
 
