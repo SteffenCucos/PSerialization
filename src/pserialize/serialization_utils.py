@@ -30,8 +30,14 @@ def is_enum(type: type):
 
 
 def is_optional(typeT: type):
+    """Return True only for the simple ``Union[T, None]`` shape.
+
+    Nullable unions containing multiple non-None branches must be handled by
+    the normal union deserializer so every valid branch is considered. Treating
+    those unions as a simple optional would discard all but the first real type.
+    """
     args = get_args(typeT)
-    return is_union(typeT) and type(None) in args
+    return is_union(typeT) and len(args) == 2 and type(None) in args
 
 
 def is_union(type: type):
@@ -67,7 +73,6 @@ def get_type_hierarchy(classType: type):
     while len(bases) > 0:
         base = bases.pop()
         typeHierarchy.append(base)
-
         for base in get_bases(base):
             bases.append(base)
 
@@ -81,5 +86,4 @@ def get_attributes(classType: type) -> dict[str, type]:
         for attrName, attrType in getattr(type, '__annotations__', {}).items():
             if attrName not in attributes.keys():
                 attributes[attrName] = attrType
-
     return attributes
