@@ -14,6 +14,7 @@ from .serialize import serialize
 from .deserialize import (
     MissingRequiredFieldException,
     NullNotAllowedException,
+    TypeMismatchException,
     UnknownFieldException,
     UnknownFieldPolicy,
     deserialize,
@@ -45,6 +46,7 @@ class Deserializer:
         classType: type,
         strict: bool = False,
         unknown_fields: Optional[UnknownFieldPolicy] = None,
+        coerce: bool = False,
     ):
         return deserialize(
             value,
@@ -52,6 +54,7 @@ class Deserializer:
             self.middleware,
             strict,
             unknown_fields,
+            coerce,
         )
 
 
@@ -60,6 +63,7 @@ __all__ = [
     "Deserializer",
     "MissingRequiredFieldException",
     "NullNotAllowedException",
+    "TypeMismatchException",
     "UnknownFieldException",
     "UnknownFieldPolicy",
     "serialize",
