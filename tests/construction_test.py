@@ -16,7 +16,7 @@ def test_deserialize_calls_constructor():
             calls.append(value)
             self.value = value
 
-    result = deserialize({"value": "3"}, Model)
+    result = deserialize({"value": "3"}, Model, coerce=True)
 
     assert result.value == 3
     assert calls == [3]
@@ -44,7 +44,11 @@ def test_dataclass_post_init_runs():
         def __post_init__(self):
             self.doubled = self.value * 2
 
-    result = deserialize({"value": "4", "doubled": 999}, Model)
+    result = deserialize(
+        {"value": "4", "doubled": 999},
+        Model,
+        coerce=True,
+    )
 
     assert result == Model(4)
     assert result.doubled == 8
@@ -55,7 +59,7 @@ def test_frozen_dataclass_uses_normal_construction():
     class FrozenModel:
         value: int
 
-    result = deserialize({"value": "4"}, FrozenModel)
+    result = deserialize({"value": "4"}, FrozenModel, coerce=True)
 
     assert result == FrozenModel(4)
 
@@ -68,7 +72,7 @@ def test_slots_class_uses_normal_construction():
             self.value = value
             self.constructed = True
 
-    result = deserialize({"value": "4"}, SlotsModel)
+    result = deserialize({"value": "4"}, SlotsModel, coerce=True)
 
     assert result.value == 4
     assert result.constructed is True
