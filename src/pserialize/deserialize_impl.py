@@ -114,6 +114,15 @@ class NullNotAllowedException(ValueError):
 
 
 @dataclasses.dataclass
+class MissingRequiredFieldException(ValueError):
+    field_name: str
+    class_type: type
+
+    def __str__(self):
+        return f"Missing required field '{self.field_name}' for {type_args_string(self.class_type)}"
+
+
+@dataclasses.dataclass
 class DeserializeDictKeyException(BaseDeserializationException):
     keyType: type
     valueType: type
@@ -184,14 +193,12 @@ def __construct_object(classType: type, parameters: list[inspect.Parameter], val
     for parameter in parameters:
         if parameter.name in values:
             value = values[parameter.name]
-        elif parameter.default is inspect.Parameter.empty:
-            # Preserve the existing missing-field behavior for now. F-05 will
-            # introduce explicit required-field validation in a separate change.
-            value = None
-        else:
+        elif parameter.default is not inspect.Parameter.empty:
             # Omit optional parameters so the constructor can apply its own
             # default or dataclass default factory.
             continue
+        else:
+            raise MissingRequiredFieldException(parameter.name, classType)
 
         if parameter.kind is inspect.Parameter.POSITIONAL_ONLY:
             args.append(value)
