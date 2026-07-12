@@ -1,28 +1,20 @@
 from collections.abc import Mapping, Sequence, Set
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional
 
 from .deserialize import deserialize
-
-from .serialization_utils import (
-    is_primitive,
-    is_enum
+from .middleware_context import (
+    DeserializationMiddleware,
+    SerializationContext,
+    SerializationMiddleware,
 )
-
-# Make all methods static
-# Make all methods private, except serialize
-# Keep serializer class to wrap the static serialize and keep track of middleware
+from .serialization_utils import is_enum, is_primitive
 
 
-SerializationMiddleware = dict[type, Callable[[object], type]]
 _TEXT_LIKE_SEQUENCE_TYPES = (str, bytes, bytearray, memoryview)
 
 
 class SerializeCycleException(ValueError):
     """Raised when serialization encounters a cyclic object graph."""
-
-
-def __middleware_or_empty(middleware: Optional[SerializationMiddleware]) -> SerializationMiddleware:
-    return middleware if middleware is not None else {}
 
 
 def __track_reference(value: object, visited: set[int]) -> int:
@@ -33,118 +25,118 @@ def __track_reference(value: object, visited: set[int]) -> int:
     return reference
 
 
-def __serialize_basic_object(object: object, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> dict:
-    """
-    Serializes an object using the fields set on its __dict__
-
-    Args:
-        object (object): The object to serialize
-
-    Returns:
-        dict: The dict representation of the object
-    """
-    middleware = __middleware_or_empty(middleware)
-    visited = visited if visited is not None else set()
-    reference = __track_reference(object, visited)
+def __serialize_basic_object(
+    value: object,
+    context: SerializationContext,
+    visited: set[int],
+) -> dict:
+    """Serialize an object using the fields stored in its ``__dict__``."""
+    reference = __track_reference(value, visited)
     try:
-        return __serialize_dict(vars(object), middleware, visited)
+        return __serialize_dict(vars(value), context, visited)
     finally:
         visited.remove(reference)
 
 
-def __serialize_dict(mapping: Mapping, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> dict:
+def __serialize_dict(
+    mapping: Mapping,
+    context: SerializationContext,
+    visited: set[int],
+) -> dict:
     """Serialize a mapping while preserving all entries."""
-    middleware = __middleware_or_empty(middleware)
-    visited = visited if visited is not None else set()
     reference = __track_reference(mapping, visited)
     try:
-        serializedDict = {}
+        serialized = {}
         for key, value in mapping.items():
-            serializedKey = _serialize_inner(key, middleware, visited)
-            serializedValue = _serialize_inner(value, middleware, visited)
-            serializedDict[serializedKey] = serializedValue
-
-        return serializedDict
+            serialized_key = _serialize_inner(key, context, visited)
+            serialized_value = _serialize_inner(value, context, visited)
+            serialized[serialized_key] = serialized_value
+        return serialized
     finally:
         visited.remove(reference)
 
 
-def __serialize_iterable(iterable, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None) -> list:
+def __serialize_iterable(
+    iterable,
+    context: SerializationContext,
+    visited: set[int],
+) -> list:
     """Serialize a sequence or set as a list of serialized elements."""
-    middleware = __middleware_or_empty(middleware)
-    visited = visited if visited is not None else set()
     reference = __track_reference(iterable, visited)
     try:
-        serializedList = []
-        for element in iterable:
-            serializedList.append(_serialize_inner(element, middleware, visited))
-
-        return serializedList
+        return [
+            _serialize_inner(element, context, visited)
+            for element in iterable
+        ]
     finally:
         visited.remove(reference)
 
 
-def serialize(value: Any, middleware: Optional[SerializationMiddleware] = None):
+def serialize(
+    value: Any,
+    middleware: Optional[SerializationMiddleware] = None,
+):
+    """Serialize a Python value using optional type-specific middleware.
+
+    Middleware callables receive ``(value, context)``. The context is also a
+    read-only mapping of the registered middleware and exposes
+    ``context.serialize(value)`` for recursive serialization with the same
+    middleware registry and cycle-detection state.
     """
-    Serializes an object.
+    if isinstance(middleware, SerializationContext):
+        return middleware.serialize(value)
 
-    Default support for:
-        Primitives (int, float, str, None)
-        Enums
-        Mapping implementations and subclasses
-        Non-text sequence implementations and subclasses
-        Set implementations and subclasses
-        Basic objects
-
-    Any custom serialization logic can be added using middleware
-
-    Args:
-        value (Any): The value to serialize
-
-    Returns:
-        object: The serialized value
-    """
-    return _serialize_inner(value, __middleware_or_empty(middleware), set())
+    context = SerializationContext(middleware)
+    visited: set[int] = set()
+    context._bind(lambda nested: _serialize_inner(nested, context, visited))
+    return context.serialize(value)
 
 
-def _serialize_inner(value: Any, middleware: Optional[SerializationMiddleware] = None, visited: Optional[set[int]] = None):
-    middleware = __middleware_or_empty(middleware)
-    visited = visited if visited is not None else set()
+def _serialize_inner(
+    value: Any,
+    context: SerializationContext,
+    visited: set[int],
+):
+    class_type = type(value)
+    serializer = context.get(class_type)
+    if serializer is not None:
+        reference = __track_reference(value, visited)
+        try:
+            return serializer(value, context)
+        finally:
+            visited.remove(reference)
 
-    classType = type(value)
-    if (serializer := middleware.get(classType, None)) is not None:
-        return serializer(value, middleware)
     if value is None:
         return None
-    if is_primitive(classType):
+    if is_primitive(class_type):
         return value
-    if is_enum(classType):
-        return _serialize_inner(value.value, middleware, visited)
+    if is_enum(class_type):
+        return _serialize_inner(value.value, context, visited)
     if isinstance(value, Mapping):
-        return __serialize_dict(value, middleware, visited)
-    if isinstance(value, Sequence) and not isinstance(value, _TEXT_LIKE_SEQUENCE_TYPES):
-        return __serialize_iterable(value, middleware, visited)
+        return __serialize_dict(value, context, visited)
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        _TEXT_LIKE_SEQUENCE_TYPES,
+    ):
+        return __serialize_iterable(value, context, visited)
     if isinstance(value, Set):
-        return __serialize_iterable(value, middleware, visited)
+        return __serialize_iterable(value, context, visited)
 
-    return __serialize_basic_object(value, middleware, visited)
+    return __serialize_basic_object(value, context, visited)
 
 
-def serialize_into(value: Any, c_type: type, s_middleware: Optional[SerializationMiddleware] = None, d_middleware: Optional[SerializationMiddleware] = None):
-    """
-    Serializes an object into another object, which may have different field/types.
-    Useful for turning a DB object into a DTO
-
-    Args:
-        value (Any): The value to serialize
-        c_type (type): The desired output type
-        deserializer (Deserializer, optional): The deserializer for building the c_type instance. Defaults to default_deserializer.
-
-    Returns:
-        c_type: A c_type instance
-    """
-
+def serialize_into(
+    value: Any,
+    c_type: type,
+    s_middleware: Optional[SerializationMiddleware] = None,
+    d_middleware: Optional[DeserializationMiddleware] = None,
+):
+    """Serialize ``value`` through ``c_type`` and return primitive output."""
     serialized = serialize(value, s_middleware)
-    # Strict is true here so that we only add the fields defined in c_type to the new object
-    custom_type = deserialize(serialized, c_type, d_middleware, strict=True)
+    custom_type = deserialize(
+        serialized,
+        c_type,
+        d_middleware,
+        strict=True,
+    )
     return serialize(custom_type)
