@@ -11,7 +11,11 @@ classes, along with the lower-level serialize and deserialize functions.
 from typing import Any, Callable, Optional
 
 from .serialize import serialize
-from .deserialize import deserialize
+from .deserialize import (
+    UnknownFieldException,
+    UnknownFieldPolicy,
+    deserialize,
+)
 
 
 SerializationMiddleware = dict[type, Callable[[object], type]]
@@ -33,8 +37,27 @@ class Deserializer:
     def __init__(self, middleware: Optional[SerializationMiddleware] = None):
         self.middleware = middleware if middleware is not None else {}
 
-    def deserialize(self, value: Any, classType: type, strict: bool = False):
-        return deserialize(value, classType, self.middleware, strict)
+    def deserialize(
+        self,
+        value: Any,
+        classType: type,
+        strict: bool = False,
+        unknown_fields: Optional[UnknownFieldPolicy] = None,
+    ):
+        return deserialize(
+            value,
+            classType,
+            self.middleware,
+            strict,
+            unknown_fields,
+        )
 
 
-__all__ = ["Serializer", "Deserializer", "serialize", "deserialize"]
+__all__ = [
+    "Serializer",
+    "Deserializer",
+    "UnknownFieldException",
+    "UnknownFieldPolicy",
+    "serialize",
+    "deserialize",
+]
