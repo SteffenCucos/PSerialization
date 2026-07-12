@@ -6,10 +6,29 @@ from .serialization_utils import get_attributes, is_enum, is_optional, is_primit
 
 
 DeserializationMiddleware = dict[type, Callable[[object], type]]
+UnknownFieldPolicy = Literal["reject", "ignore", "preserve"]
+_VALID_UNKNOWN_FIELD_POLICIES = {"reject", "ignore", "preserve"}
 
 
 def __middleware_or_empty(middleware: Optional[DeserializationMiddleware]) -> DeserializationMiddleware:
     return middleware if middleware is not None else {}
+
+
+def __resolve_unknown_field_policy(
+    strict: bool,
+    unknown_fields: Optional[UnknownFieldPolicy],
+) -> UnknownFieldPolicy:
+    if unknown_fields is None:
+        # Backward compatibility: strict=True historically ignored fields that
+        # were not declared by the target type. The safer default for new calls
+        # is to reject unknown fields.
+        return "ignore" if strict else "reject"
+
+    if unknown_fields not in _VALID_UNKNOWN_FIELD_POLICIES:
+        allowed = ", ".join(sorted(_VALID_UNKNOWN_FIELD_POLICIES))
+        raise ValueError(f"unknown_fields must be one of: {allowed}")
+
+    return unknown_fields
 
 
 def __is_literal(type_hint: type) -> bool:
@@ -57,6 +76,15 @@ class BaseDeserializationException(Exception):
 
     def __str__(self):
         return self.__repr__()
+
+
+@dataclasses.dataclass
+class UnknownFieldException(ValueError):
+    field_name: str
+    class_type: type
+
+    def __str__(self):
+        return f"Unknown field '{self.field_name}' for {type_args_string(self.class_type)}"
 
 
 @dataclasses.dataclass
@@ -147,7 +175,12 @@ def __construct_object(classType: type, parameters: list[inspect.Parameter], val
     return classType(*args, **kwargs)
 
 
-def __deserialize_simple_object(data: dict, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_simple_object(
+    data: dict,
+    classType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     middleware = __middleware_or_empty(middleware)
     attributes = get_attributes(classType)
     class_type_hints = __get_type_hints_or_empty(classType)
@@ -178,20 +211,31 @@ def __deserialize_simple_object(data: dict, classType: type, middleware: Optiona
             # and must not be overwritten from serialized input.
             continue
 
-        if strict and field_type is None and name not in parameter_names:
+        is_known_field = name in parameter_names or name in field_types
+        if not is_known_field:
+            if unknown_fields == "reject":
+                raise UnknownFieldException(name, classType)
+            if unknown_fields == "ignore":
+                continue
+
+            # Explicit preserve mode retains the legacy behavior. Unknown values
+            # have no declared target type, so they are attached unchanged after
+            # normal construction.
+            post_construction_values[name] = value
             continue
 
         try:
-            deserialized_value = __deserialize_inner(value, field_type, middleware, strict) if field_type else value
+            deserialized_value = (
+                __deserialize_inner(value, field_type, middleware, unknown_fields)
+                if field_type
+                else value
+            )
         except Exception as e:
             raise DeserializeClassException(e, value, field_type, name)
 
         if name in parameter_names:
             constructor_values[name] = deserialized_value
         else:
-            # Preserve the legacy non-strict extension behavior until F-02
-            # introduces an explicit unknown-field policy. Use setattr rather
-            # than direct __dict__ mutation so descriptors and slots are honored.
             post_construction_values[name] = deserialized_value
 
     cls = __construct_object(classType, parameters, constructor_values)
@@ -205,29 +249,45 @@ def __deserialize_simple_object(data: dict, classType: type, middleware: Optiona
     return cls
 
 
-def __deserialize_collection_items(values, collectionType: type, itemType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_collection_items(
+    values,
+    collectionType: type,
+    itemType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     middleware = __middleware_or_empty(middleware)
     deserialized = []
     for index in range(len(values)):
         value = values[index]
         try:
-            deserialized.append(__deserialize_inner(value, itemType, middleware, strict))
+            deserialized.append(__deserialize_inner(value, itemType, middleware, unknown_fields))
         except Exception as e:
             raise DeserializeListException(e, value, collectionType, index)
     return deserialized
 
 
-def __deserialize_list(values: list, listType: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_list(
+    values: list,
+    listType: list[type],
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     typeArg = get_args(listType)[0] if get_args(listType) else Any
-    return __deserialize_collection_items(values, listType, typeArg, middleware, strict)
+    return __deserialize_collection_items(values, listType, typeArg, middleware, unknown_fields)
 
 
-def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_tuple(
+    values: list,
+    tupleType: tuple[type],
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     typeArgs = get_args(tupleType)
     if len(typeArgs) == 0:
         return tuple(values)
     if len(typeArgs) == 2 and typeArgs[1] is Ellipsis:
-        return tuple(__deserialize_collection_items(values, tupleType, typeArgs[0], middleware, strict))
+        return tuple(__deserialize_collection_items(values, tupleType, typeArgs[0], middleware, unknown_fields))
 
     if len(values) != len(typeArgs):
         raise BaseDeserializationException(Exception(f"Expected tuple of length {len(typeArgs)}, got {len(values)}"), values)
@@ -235,33 +295,49 @@ def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: Option
     deserialized = []
     for index, typeArg in enumerate(typeArgs):
         try:
-            deserialized.append(__deserialize_inner(values[index], typeArg, middleware, strict))
+            deserialized.append(__deserialize_inner(values[index], typeArg, middleware, unknown_fields))
         except Exception as e:
             raise DeserializeListException(e, values[index], tupleType, index)
     return tuple(deserialized)
 
 
-def __deserialize_set(values: list, setType: set[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_set(
+    values: list,
+    setType: set[type],
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     typeArg = get_args(setType)[0] if get_args(setType) else Any
-    return set(__deserialize_collection_items(values, setType, typeArg, middleware, strict))
+    return set(__deserialize_collection_items(values, setType, typeArg, middleware, unknown_fields))
 
 
-def __deserialize_frozenset(values: list, frozenSetType: frozenset[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_frozenset(
+    values: list,
+    frozenSetType: frozenset[type],
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     typeArg = get_args(frozenSetType)[0] if get_args(frozenSetType) else Any
-    return frozenset(__deserialize_collection_items(values, frozenSetType, typeArg, middleware, strict))
+    return frozenset(__deserialize_collection_items(values, frozenSetType, typeArg, middleware, unknown_fields))
 
 
-def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_dict(
+    data: dict,
+    keyType: type,
+    valueType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     middleware = __middleware_or_empty(middleware)
     deserializedDict = {}
     for key, value in data.items():
         try:
-            deserializedKey = __deserialize_inner(key, keyType, middleware, strict)
+            deserializedKey = __deserialize_inner(key, keyType, middleware, unknown_fields)
         except Exception as e:
             raise DeserializeDictKeyException(e, key, keyType, valueType)
 
         try:
-            deserializedValue = __deserialize_inner(value, valueType, middleware, strict)
+            deserializedValue = __deserialize_inner(value, valueType, middleware, unknown_fields)
         except Exception as e:
             raise DeserializeDictValueException(e, value, keyType, valueType, key)
 
@@ -270,7 +346,12 @@ def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: O
     return deserializedDict
 
 
-def __deserialize_union(value: Any, allowed_types: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_union(
+    value: Any,
+    allowed_types: list[type],
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     middleware = __middleware_or_empty(middleware)
     value_type = type(value)
     for allowed_type in allowed_types:
@@ -279,7 +360,7 @@ def __deserialize_union(value: Any, allowed_types: list[type], middleware: Optio
 
     for allowed_type in allowed_types:
         try:
-            return __deserialize_inner(value, allowed_type, middleware, strict)
+            return __deserialize_inner(value, allowed_type, middleware, unknown_fields)
         except Exception:
             pass
 
@@ -294,26 +375,49 @@ def __deserialize_literal(value: Any, literalType: type):
     raise BaseDeserializationException(Exception(f"Expected one of {allowed_values}"), value)
 
 
-def __deserialize_type_var(value: Any, typeVar: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_type_var(
+    value: Any,
+    typeVar: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     constraints = getattr(typeVar, "__constraints__", ())
     if constraints:
-        return __deserialize_union(value, constraints, middleware, strict)
+        return __deserialize_union(value, constraints, middleware, unknown_fields)
 
     bound = getattr(typeVar, "__bound__", None)
     if bound is not None:
-        return __deserialize_inner(value, bound, middleware, strict)
+        return __deserialize_inner(value, bound, middleware, unknown_fields)
 
     return value
 
 
-def deserialize(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def deserialize(
+    value: Any,
+    classType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    strict: bool = False,
+    unknown_fields: Optional[UnknownFieldPolicy] = None,
+):
+    resolved_unknown_fields = __resolve_unknown_field_policy(strict, unknown_fields)
+
     try:
-        return __deserialize_inner(value, classType, __middleware_or_empty(middleware), strict)
+        return __deserialize_inner(
+            value,
+            classType,
+            __middleware_or_empty(middleware),
+            resolved_unknown_fields,
+        )
     except Exception as e:
         raise DeserializeClassException(e, value, classType, None)
 
 
-def __deserialize_inner(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
+def __deserialize_inner(
+    value: Any,
+    classType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    unknown_fields: UnknownFieldPolicy = "reject",
+):
     middleware = __middleware_or_empty(middleware)
 
     def deserialize_primitive(classType: type, value: Any):
@@ -327,7 +431,7 @@ def __deserialize_inner(value: Any, classType: type, middleware: Optional[Deseri
     if __is_literal(classType):
         return __deserialize_literal(value, classType)
     if __is_type_var(classType):
-        return __deserialize_type_var(value, classType, middleware, strict)
+        return __deserialize_type_var(value, classType, middleware, unknown_fields)
     if (deserializer := middleware.get(classType, None)) is not None:
         return deserializer(value, middleware)
     if value is None:
@@ -338,23 +442,23 @@ def __deserialize_inner(value: Any, classType: type, middleware: Optional[Deseri
         return deserialize_primitive(classType, value)
     if is_optional(classType):
         realType = [arg for arg in get_args(classType) if arg is not type(None)][0]
-        return __deserialize_inner(value, realType, middleware, strict)
+        return __deserialize_inner(value, realType, middleware, unknown_fields)
 
     originType = get_origin(classType)
     typeArgs = get_args(classType)
     if originType is list:
-        return __deserialize_list(value, classType, middleware, strict)
+        return __deserialize_list(value, classType, middleware, unknown_fields)
     if originType is tuple:
-        return __deserialize_tuple(value, classType, middleware, strict)
+        return __deserialize_tuple(value, classType, middleware, unknown_fields)
     if originType is set:
-        return __deserialize_set(value, classType, middleware, strict)
+        return __deserialize_set(value, classType, middleware, unknown_fields)
     if originType is frozenset:
-        return __deserialize_frozenset(value, classType, middleware, strict)
+        return __deserialize_frozenset(value, classType, middleware, unknown_fields)
     if originType is dict:
         keyType = typeArgs[0] if len(typeArgs) > 0 else Any
         valueType = typeArgs[1] if len(typeArgs) > 1 else Any
-        return __deserialize_dict(value, keyType, valueType, middleware, strict)
+        return __deserialize_dict(value, keyType, valueType, middleware, unknown_fields)
     if is_union(classType):
-        return __deserialize_union(value, get_args(classType), middleware, strict)
+        return __deserialize_union(value, get_args(classType), middleware, unknown_fields)
 
-    return __deserialize_simple_object(value, classType, middleware, strict)
+    return __deserialize_simple_object(value, classType, middleware, unknown_fields)
