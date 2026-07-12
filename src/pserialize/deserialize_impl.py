@@ -1,4 +1,5 @@
 import dataclasses
+import inspect
 from typing import Any, Callable, Literal, Optional, get_args, get_origin, get_type_hints
 
 from .serialization_utils import get_attributes, is_enum, is_optional, is_primitive, is_union
@@ -102,30 +103,104 @@ class DeserializeClassException(BaseDeserializationException):
         return s
 
 
+def __get_constructor_parameters(classType: type) -> list[inspect.Parameter]:
+    try:
+        signature = inspect.signature(classType)
+    except (TypeError, ValueError):
+        return []
+
+    return [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+
+
+def __get_type_hints_or_empty(target: Any) -> dict[str, type]:
+    try:
+        return get_type_hints(target)
+    except (NameError, TypeError):
+        return {}
+
+
+def __construct_object(classType: type, parameters: list[inspect.Parameter], values: dict[str, Any]):
+    args = []
+    kwargs = {}
+
+    for parameter in parameters:
+        if parameter.name in values:
+            value = values[parameter.name]
+        elif parameter.default is inspect.Parameter.empty:
+            # Preserve the existing missing-field behavior for now. F-05 will
+            # introduce explicit required-field validation in a separate change.
+            value = None
+        else:
+            # Omit optional parameters so the constructor can apply its own
+            # default or dataclass default factory.
+            continue
+
+        if parameter.kind is inspect.Parameter.POSITIONAL_ONLY:
+            args.append(value)
+        else:
+            kwargs[parameter.name] = value
+
+    return classType(*args, **kwargs)
+
+
 def __deserialize_simple_object(data: dict, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
     middleware = __middleware_or_empty(middleware)
     attributes = get_attributes(classType)
-    type_hints = get_type_hints(classType.__init__)
-    if dataclasses.is_dataclass(classType):
-        type_hints.pop("return", None)
+    class_type_hints = __get_type_hints_or_empty(classType)
+    init_type_hints = __get_type_hints_or_empty(classType.__init__)
+    init_type_hints.pop("return", None)
 
-    cls = object.__new__(classType)
+    parameters = __get_constructor_parameters(classType)
+    parameter_names = {parameter.name for parameter in parameters}
+
+    field_types = dict(attributes)
+    field_types.update(class_type_hints)
+    field_types.update(init_type_hints)
+
+    dataclass_non_init_fields = set()
+    if dataclasses.is_dataclass(classType):
+        dataclass_non_init_fields = {
+            field.name for field in dataclasses.fields(classType) if not field.init
+        }
+
+    constructor_values = {}
+    post_construction_values = {}
 
     for name, value in data.items():
-        field_type = attributes.pop(name) if name in attributes.keys() else None
-        field_type = type_hints.pop(name) if name in type_hints.keys() else field_type
+        field_type = field_types.get(name)
 
-        if strict and field_type is None:
+        if name in dataclass_non_init_fields:
+            # init=False fields belong to the constructor/__post_init__ lifecycle
+            # and must not be overwritten from serialized input.
+            continue
+
+        if strict and field_type is None and name not in parameter_names:
             continue
 
         try:
-            cls.__dict__[name] = __deserialize_inner(value, field_type, middleware, strict) if field_type else value
+            deserialized_value = __deserialize_inner(value, field_type, middleware, strict) if field_type else value
         except Exception as e:
             raise DeserializeClassException(e, value, field_type, name)
 
-    remaining = [name for name in attributes.keys()] + [name for name in type_hints.keys()]
-    for field in remaining:
-        cls.__dict__[field] = None
+        if name in parameter_names:
+            constructor_values[name] = deserialized_value
+        else:
+            # Preserve the legacy non-strict extension behavior until F-02
+            # introduces an explicit unknown-field policy. Use setattr rather
+            # than direct __dict__ mutation so descriptors and slots are honored.
+            post_construction_values[name] = deserialized_value
+
+    cls = __construct_object(classType, parameters, constructor_values)
+
+    for name, value in post_construction_values.items():
+        try:
+            setattr(cls, name, value)
+        except Exception as e:
+            raise DeserializeClassException(e, value, field_types.get(name), name)
 
     return cls
 
