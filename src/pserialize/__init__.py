@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 
 from .serialize import serialize
 from .deserialize import (
+    NullNotAllowedException,
     UnknownFieldException,
     UnknownFieldPolicy,
     deserialize,
@@ -56,6 +57,7 @@ class Deserializer:
 __all__ = [
     "Serializer",
     "Deserializer",
+    "NullNotAllowedException",
     "UnknownFieldException",
     "UnknownFieldPolicy",
     "serialize",
