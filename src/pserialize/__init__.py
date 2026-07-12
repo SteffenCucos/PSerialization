@@ -3,15 +3,14 @@
 PSerialization provides helpers for converting Python objects to primitive
 Python data structures and reading those structures back into application
 objects.
-
-The main package API exposes the Serializer and Deserializer convenience
-classes, along with the lower-level serialize and deserialize functions.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
-from .serialize import serialize
 from .deserialize import (
+    DeserializationContext,
+    DeserializationMiddleware,
+    DeserializerMiddleware,
     DeserializationMismatch,
     MissingRequiredFieldException,
     NullNotAllowedException,
@@ -21,16 +20,22 @@ from .deserialize import (
     UnknownFieldPolicy,
     deserialize,
 )
-
-
-SerializationMiddleware = dict[type, Callable[[object], type]]
+from .middleware_context import (
+    SerializationContext,
+    SerializationMiddleware,
+    SerializerMiddleware,
+)
+from .serialize import serialize
 
 
 class Serializer:
     """Serialize Python objects using optional type-specific middleware."""
 
-    def __init__(self, middleware: Optional[SerializationMiddleware] = None):
-        self.middleware = middleware if middleware is not None else {}
+    def __init__(
+        self,
+        middleware: Optional[SerializationMiddleware] = None,
+    ):
+        self.middleware = dict(middleware) if middleware is not None else {}
 
     def serialize(self, value: Any):
         return serialize(value, self.middleware)
@@ -39,8 +44,11 @@ class Serializer:
 class Deserializer:
     """Deserialize primitive values into typed Python objects."""
 
-    def __init__(self, middleware: Optional[SerializationMiddleware] = None):
-        self.middleware = middleware if middleware is not None else {}
+    def __init__(
+        self,
+        middleware: Optional[DeserializationMiddleware] = None,
+    ):
+        self.middleware = dict(middleware) if middleware is not None else {}
 
     def deserialize(
         self,
@@ -63,6 +71,12 @@ class Deserializer:
 __all__ = [
     "Serializer",
     "Deserializer",
+    "SerializationContext",
+    "DeserializationContext",
+    "SerializerMiddleware",
+    "DeserializerMiddleware",
+    "SerializationMiddleware",
+    "DeserializationMiddleware",
     "DeserializationMismatch",
     "MissingRequiredFieldException",
     "NullNotAllowedException",
