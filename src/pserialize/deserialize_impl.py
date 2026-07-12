@@ -43,6 +43,24 @@ def __literal_matches(value: Any, literal_value: Any) -> bool:
     return value == literal_value and type(value) is type(literal_value)
 
 
+def __allows_none(type_hint: type) -> bool:
+    if type_hint is Any or type_hint is type(None):
+        return True
+
+    if __is_literal(type_hint):
+        return any(literal_value is None for literal_value in get_args(type_hint))
+
+    if __is_type_var(type_hint):
+        constraints = getattr(type_hint, "__constraints__", ())
+        if constraints:
+            return any(__allows_none(constraint) for constraint in constraints)
+
+        bound = getattr(type_hint, "__bound__", None)
+        return bound is None or __allows_none(bound)
+
+    return is_union(type_hint) and type(None) in get_args(type_hint)
+
+
 def type_args_string(type: type):
     if is_union(type):
         name = "Union"
@@ -85,6 +103,14 @@ class UnknownFieldException(ValueError):
 
     def __str__(self):
         return f"Unknown field '{self.field_name}' for {type_args_string(self.class_type)}"
+
+
+@dataclasses.dataclass
+class NullNotAllowedException(ValueError):
+    target_type: type
+
+    def __str__(self):
+        return f"None is not allowed for {type_args_string(self.target_type)}"
 
 
 @dataclasses.dataclass
@@ -430,12 +456,14 @@ def __deserialize_inner(
         return value
     if __is_literal(classType):
         return __deserialize_literal(value, classType)
+    if value is None:
+        if __allows_none(classType):
+            return None
+        raise NullNotAllowedException(classType)
     if __is_type_var(classType):
         return __deserialize_type_var(value, classType, middleware, unknown_fields)
     if (deserializer := middleware.get(classType, None)) is not None:
         return deserializer(value, middleware)
-    if value is None:
-        return None
     if is_primitive(classType):
         return deserialize_primitive(classType, value)
     if is_enum(classType):
