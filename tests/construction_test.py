@@ -2,7 +2,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from src.pserialize import deserialize
+from src.pserialize import MissingRequiredFieldException, deserialize
+from src.pserialize.deserialize import DeserializeClassException
 
 
 def test_deserialize_calls_constructor():
@@ -85,12 +86,15 @@ def test_constructor_default_is_preserved_when_field_is_missing():
     assert result == Model(1, "default")
 
 
-def test_missing_required_field_preserves_legacy_none_behavior_for_now():
+def test_missing_required_field_is_rejected():
     @dataclass
     class Model:
         value: int
         name: str
 
-    result = deserialize({"value": 1}, Model)
+    with pytest.raises(DeserializeClassException) as captured:
+        deserialize({"value": 1}, Model)
 
-    assert result == Model(1, None)
+    assert isinstance(captured.value.error, MissingRequiredFieldException)
+    assert captured.value.error.field_name == "name"
+    assert captured.value.error.class_type is Model
