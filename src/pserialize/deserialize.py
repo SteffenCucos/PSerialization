@@ -2,6 +2,9 @@
 
 from .deserialize_impl import (
     BaseDeserializationException,
+    DeserializationContext,
+    DeserializationMiddleware,
+    DeserializerMiddleware,
     DeserializationMismatch,
     DeserializeClassException,
     DeserializeDictKeyException,
@@ -19,6 +22,9 @@ from .deserialize_impl import (
 
 __all__ = [
     "BaseDeserializationException",
+    "DeserializationContext",
+    "DeserializationMiddleware",
+    "DeserializerMiddleware",
     "DeserializationMismatch",
     "DeserializeClassException",
     "DeserializeDictKeyException",
