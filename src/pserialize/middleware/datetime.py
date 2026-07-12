@@ -1,13 +1,19 @@
-from typing import Callable
-
 from datetime import datetime
+
+from ..middleware_context import DeserializationContext, SerializationContext
 
 
 class _datetime:
     @staticmethod
-    def deserializer(value: str, middleware: dict[type, Callable[[object], type]] = {}) -> datetime:
+    def deserializer(
+        value: str,
+        context: DeserializationContext,
+    ) -> datetime:
         return datetime.fromisoformat(value)
 
     @staticmethod
-    def serializer(obj: datetime, middleware: dict[type, Callable[[object], type]] = {}) -> str:
-        return obj.isoformat()
+    def serializer(
+        value: datetime,
+        context: SerializationContext,
+    ) -> str:
+        return value.isoformat()
