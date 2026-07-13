@@ -176,7 +176,13 @@ def serialize_into(
     s_middleware: Optional[SerializationMiddleware] = None,
     d_middleware: Optional[DeserializationMiddleware] = None,
 ):
-    """Serialize ``value`` through ``c_type`` and return primitive output."""
+    """Return primitive output after shaping ``value`` through ``c_type``.
+
+    ``serialize_into`` does not return an instance of ``c_type``. It serializes
+    ``value``, deserializes that representation as ``c_type``, and serializes the
+    converted instance again. ``s_middleware`` is applied during both
+    serialization passes, while ``d_middleware`` is applied during conversion.
+    """
     serialized = serialize(value, s_middleware)
     custom_type = deserialize(
         serialized,
@@ -184,4 +190,4 @@ def serialize_into(
         d_middleware,
         strict=True,
     )
-    return serialize(custom_type)
+    return serialize(custom_type, s_middleware)
