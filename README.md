@@ -75,6 +75,29 @@ Sequence targets reject mappings and text-like inputs. Dictionary targets requir
 a mapping-shaped input. Raw collection targets create a new outer collection,
 while untyped nested element values are preserved as supplied.
 
+## Dictionary keys
+
+Serialized mappings use JSON-compatible string keys. A source mapping key must
+be a string, and serialization middleware applied to that key must also return a
+string. Non-string keys raise `UnsupportedKeyTypeException` instead of failing
+later with an unhashable-key error or producing output that JSON consumers handle
+inconsistently.
+
+```python
+from pserialize import UnsupportedKeyTypeException, serialize
+
+assert serialize({"one": 1}) == {"one": 1}
+
+try:
+    serialize({1: "one"})
+except UnsupportedKeyTypeException:
+    pass
+```
+
+If middleware transforms two distinct string keys into the same output key,
+serialization raises `SerializedKeyCollisionException` rather than silently
+overwriting an entry.
+
 ## Middleware example
 
 Middleware always receives two arguments: the value and a context object. The
