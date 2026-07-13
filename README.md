@@ -165,6 +165,17 @@ assert serialized == "2022-07-25T11:03:44.021000"
 assert deserialized == date
 ```
 
+## Safe deserialization errors
+
+Deserialization exception strings include field paths and expected and actual
+types, but do not render the rejected input value or arbitrary underlying cause
+text. This makes normal exception logging safer for payloads containing tokens,
+passwords, or personal information.
+
+Structured exception attributes such as `.value`, `.error`, `.reason`, and
+`.branch_errors` remain available for explicit debugging. Treat those attributes
+as potentially sensitive and do not log them in untrusted environments.
+
 ## Development notes
 
 - Add tests for custom middleware behavior before changing serialization logic.
