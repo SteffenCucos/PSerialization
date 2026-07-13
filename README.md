@@ -98,6 +98,35 @@ If middleware transforms two distinct string keys into the same output key,
 serialization raises `SerializedKeyCollisionException` rather than silently
 overwriting an entry.
 
+## Serializing through another type
+
+`serialize_into(value, target_type)` uses `target_type` as an intermediate schema
+and returns primitive serialized output. It does not return an instance of
+`target_type`.
+
+```python
+from dataclasses import dataclass
+from pserialize.serialize import serialize_into
+
+@dataclass
+class User:
+    id: int
+    name: str
+    password: str
+
+@dataclass
+class PublicUser:
+    id: int
+    name: str
+
+result = serialize_into(User(1, "Alice", "secret"), PublicUser)
+assert result == {"id": 1, "name": "Alice"}
+```
+
+`serialize_into` applies `s_middleware` during both serialization passes and
+`d_middleware` while constructing the intermediate target instance. This keeps
+custom types such as `datetime` consistent in the final output.
+
 ## Middleware example
 
 Middleware always receives two arguments: the value and a context object. The
