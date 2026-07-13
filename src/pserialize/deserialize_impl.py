@@ -5,6 +5,7 @@ and enforces the public middleware contract while preserving the engine's
 existing exception types and recursive behavior.
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
 from . import _deserialize_core as _core
@@ -30,6 +31,111 @@ UnknownFieldPolicy = _core.UnknownFieldPolicy
 type_args_string = _core.type_args_string
 
 
+_TEXT_LIKE_SEQUENCE_TYPES = (str, bytes, bytearray, memoryview)
+
+
+def _require_mapping(value: Any, target_type: type) -> Mapping:
+    if not isinstance(value, Mapping):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a mapping-shaped input",
+        )
+    return value
+
+
+def _require_sequence(value: Any, target_type: type) -> Sequence:
+    if not isinstance(value, Sequence) or isinstance(
+        value,
+        _TEXT_LIKE_SEQUENCE_TYPES,
+    ):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a non-text sequence input",
+        )
+    return value
+
+
+def _deserialize_raw_list(value: Any, context: DeserializationContext) -> list:
+    sequence = _require_sequence(value, list)
+    return [context.deserialize(item, Any) for item in sequence]
+
+
+def _deserialize_raw_tuple(value: Any, context: DeserializationContext) -> tuple:
+    sequence = _require_sequence(value, tuple)
+    return tuple(context.deserialize(item, Any) for item in sequence)
+
+
+def _deserialize_raw_set(value: Any, context: DeserializationContext) -> set:
+    sequence = _require_sequence(value, set)
+    return {context.deserialize(item, Any) for item in sequence}
+
+
+def _deserialize_raw_frozenset(
+    value: Any,
+    context: DeserializationContext,
+) -> frozenset:
+    sequence = _require_sequence(value, frozenset)
+    return frozenset(context.deserialize(item, Any) for item in sequence)
+
+
+def _deserialize_raw_dict(value: Any, context: DeserializationContext) -> dict:
+    mapping = _require_mapping(value, dict)
+    return {
+        context.deserialize(key, Any): context.deserialize(item, Any)
+        for key, item in mapping.items()
+    }
+
+
+_RAW_COLLECTION_DESERIALIZERS: dict[type, DeserializerMiddleware] = {
+    list: _deserialize_raw_list,
+    tuple: _deserialize_raw_tuple,
+    set: _deserialize_raw_set,
+    frozenset: _deserialize_raw_frozenset,
+    dict: _deserialize_raw_dict,
+}
+
+
+def _build_contexts(
+    middleware: Optional[DeserializationMiddleware],
+    *,
+    unknown_fields: UnknownFieldPolicy,
+    coerce: bool,
+) -> tuple[DeserializationContext, DeserializationContext]:
+    """Build public and engine contexts with hidden raw-collection fallbacks."""
+    registered = dict(middleware) if middleware is not None else {}
+    public_context = DeserializationContext(
+        registered,
+        unknown_fields=unknown_fields,
+        coerce=coerce,
+    )
+
+    effective = dict(_RAW_COLLECTION_DESERIALIZERS)
+    effective.update(registered)
+
+    # The engine receives wrappers so every middleware callable, including the
+    # internal collection fallbacks, sees the public context rather than the
+    # effective registry containing implementation details.
+    engine_middleware: dict[type, DeserializerMiddleware] = {}
+    for target_type, deserializer in effective.items():
+        engine_middleware[target_type] = (
+            lambda value, _engine_context, handler=deserializer: handler(
+                value,
+                public_context,
+            )
+        )
+
+    engine_context = DeserializationContext(
+        engine_middleware,
+        unknown_fields=unknown_fields,
+        coerce=coerce,
+    )
+    return public_context, engine_context
+
+
 def deserialize(
     value: Any,
     classType: type,
@@ -52,24 +158,25 @@ def deserialize(
     deserialize_inner = getattr(_core, "__deserialize_inner")
     resolved_unknown_fields = resolve_policy(strict, unknown_fields)
 
-    context = DeserializationContext(
+    public_context, engine_context = _build_contexts(
         middleware,
         unknown_fields=resolved_unknown_fields,
         coerce=coerce,
     )
-    context._bind(
-        lambda nested_value, target_type: deserialize_inner(
-            nested_value,
-            target_type,
-            context,
-            resolved_unknown_fields,
-        )
+
+    recursive_deserialize = lambda nested_value, target_type: deserialize_inner(
+        nested_value,
+        target_type,
+        engine_context,
+        resolved_unknown_fields,
     )
+    public_context._bind(recursive_deserialize)
+    engine_context._bind(recursive_deserialize)
 
     return _core.deserialize(
         value,
         classType,
-        context,
+        engine_context,
         strict,
         unknown_fields,
         coerce,
