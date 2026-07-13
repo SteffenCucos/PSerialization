@@ -17,6 +17,36 @@ class SerializeCycleException(ValueError):
     """Raised when serialization encounters a cyclic object graph."""
 
 
+class UnsupportedKeyTypeException(ValueError):
+    """Raised when a mapping key is not or does not serialize to a string."""
+
+    def __init__(
+        self,
+        key_type: type,
+        serialized_key_type: Optional[type] = None,
+    ):
+        self.key_type = key_type
+        self.serialized_key_type = serialized_key_type
+
+        if serialized_key_type is None:
+            detail = f"received {key_type.__name__}"
+        else:
+            detail = (
+                f"key type {key_type.__name__} serialized to "
+                f"{serialized_key_type.__name__}"
+            )
+
+        super().__init__(f"Mapping keys must be strings; {detail}")
+
+
+class SerializedKeyCollisionException(ValueError):
+    """Raised when distinct mapping keys serialize to the same string."""
+
+    def __init__(self, serialized_key: str):
+        self.serialized_key = serialized_key
+        super().__init__("Multiple mapping keys serialized to the same string")
+
+
 def __track_reference(value: object, visited: set[int]) -> int:
     reference = id(value)
     if reference in visited:
@@ -43,14 +73,28 @@ def __serialize_dict(
     context: SerializationContext,
     visited: set[int],
 ) -> dict:
-    """Serialize a mapping while preserving all entries."""
+    """Serialize a mapping whose keys remain JSON-compatible strings."""
     reference = __track_reference(mapping, visited)
     try:
         serialized = {}
         for key, value in mapping.items():
+            if not isinstance(key, str):
+                raise UnsupportedKeyTypeException(type(key))
+
             serialized_key = _serialize_inner(key, context, visited)
-            serialized_value = _serialize_inner(value, context, visited)
-            serialized[serialized_key] = serialized_value
+            if not isinstance(serialized_key, str):
+                raise UnsupportedKeyTypeException(
+                    type(key),
+                    type(serialized_key),
+                )
+            if serialized_key in serialized:
+                raise SerializedKeyCollisionException(serialized_key)
+
+            serialized[serialized_key] = _serialize_inner(
+                value,
+                context,
+                visited,
+            )
         return serialized
     finally:
         visited.remove(reference)
@@ -78,8 +122,9 @@ def serialize(
 ):
     """Serialize a Python value using optional type-specific middleware.
 
-    Middleware callables receive ``(value, context)``. The context is also a
-    read-only mapping of the registered middleware and exposes
+    Mapping keys must be strings and must remain strings after middleware is
+    applied. Middleware callables receive ``(value, context)``. The context is
+    also a read-only mapping of the registered middleware and exposes
     ``context.serialize(value)`` for recursive serialization with the same
     middleware registry and cycle-detection state.
     """
