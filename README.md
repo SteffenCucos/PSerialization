@@ -8,7 +8,7 @@ This is useful when moving Python objects through JSON-like systems, configurati
 
 - Serialize simple Python objects into primitive structures.
 - Deserialize primitive structures back into typed objects.
-- Support lists and nested object graphs.
+- Support parameterized and raw collection targets.
 - Allow custom middleware for special types such as `datetime.datetime`.
 
 ## Installation
@@ -51,6 +51,28 @@ assert serialized == [
 
 deserialized = deserializer.deserialize(serialized, list[Shoe])
 ```
+
+## Collection targets
+
+Parameterized collections validate and deserialize their elements. Raw built-in
+collection targets accept the corresponding serialized shape and preserve their
+element values without inventing element types.
+
+```python
+from pserialize import deserialize
+
+assert deserialize([1, 2], list) == [1, 2]
+assert deserialize([1, 2], tuple) == (1, 2)
+assert deserialize([1, 2], set) == {1, 2}
+assert deserialize([1, 2], frozenset) == frozenset({1, 2})
+assert deserialize({"one": 1}, dict) == {"one": 1}
+
+# Parameterized targets apply their declared element types.
+assert deserialize(["1", "2"], list[int], coerce=True) == [1, 2]
+```
+
+Sequence targets reject mappings and text-like inputs. Dictionary targets require
+a mapping-shaped input.
 
 ## Middleware example
 
