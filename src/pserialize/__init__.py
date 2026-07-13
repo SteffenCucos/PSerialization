@@ -25,7 +25,11 @@ from .middleware_context import (
     SerializationMiddleware,
     SerializerMiddleware,
 )
-from .serialize import serialize
+from .serialize import (
+    SerializedKeyCollisionException,
+    UnsupportedKeyTypeException,
+    serialize,
+)
 
 
 class Serializer:
@@ -84,6 +88,8 @@ __all__ = [
     "UnionDeserializationException",
     "UnknownFieldException",
     "UnknownFieldPolicy",
+    "UnsupportedKeyTypeException",
+    "SerializedKeyCollisionException",
     "serialize",
     "deserialize",
 ]
