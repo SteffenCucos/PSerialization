@@ -72,7 +72,8 @@ assert deserialize(["1", "2"], list[int], coerce=True) == [1, 2]
 ```
 
 Sequence targets reject mappings and text-like inputs. Dictionary targets require
-a mapping-shaped input.
+a mapping-shaped input. Raw collection targets create a new outer collection,
+while untyped nested element values are preserved as supplied.
 
 ## Middleware example
 
