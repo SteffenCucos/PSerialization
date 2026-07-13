@@ -31,6 +31,41 @@ UnknownFieldPolicy = _core.UnknownFieldPolicy
 type_args_string = _core.type_args_string
 
 
+def _redacted_base_exception_repr(error: BaseDeserializationException) -> str:
+    """Format a deserialization failure without rendering its raw input value."""
+    if isinstance(error.error, BaseDeserializationException):
+        return " -> " + str(error.error)
+    return f"Deserialization failed ({type(error.error).__name__})"
+
+
+def _redacted_type_mismatch_repr(error: TypeMismatchException) -> str:
+    """Describe the type mismatch using types only, never the rejected value."""
+    return (
+        f"Expected {type_args_string(error.expected_type)}, "
+        f"got {type_args_string(error.actual_type)}"
+    )
+
+
+def _redacted_union_exception_repr(
+    error: UnionDeserializationException,
+) -> str:
+    """Retain branch diagnostics while relying on each branch's safe formatter."""
+    branches = "; ".join(
+        f"{type_args_string(branch_type)}: {branch_error}"
+        for branch_type, branch_error in error.branch_errors
+    )
+    return f"No union branch matched ({branches})"
+
+
+# Exception classes are defined in the private core, but their public rendering
+# contract belongs to this facade. Keep raw values available as structured
+# ``.value`` fields for callers that explicitly inspect them while preventing
+# accidental disclosure through logging, ``str(error)``, or ``repr(error)``.
+BaseDeserializationException.__repr__ = _redacted_base_exception_repr
+TypeMismatchException.__repr__ = _redacted_type_mismatch_repr
+UnionDeserializationException.__repr__ = _redacted_union_exception_repr
+
+
 _TEXT_LIKE_SEQUENCE_TYPES = (str, bytes, bytearray, memoryview)
 
 
