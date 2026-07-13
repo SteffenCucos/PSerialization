@@ -30,6 +30,19 @@ def test_top_level_type_mismatch_redacts_raw_value():
     assert captured.value.actual_type is str
 
 
+def test_type_mismatch_reason_is_structured_but_not_rendered():
+    error = TypeMismatchException(
+        SECRET,
+        int,
+        str,
+        f"invalid credential: {SECRET}",
+    )
+
+    assert_redacted(error)
+    assert str(error) == "Expected int, got str"
+    assert SECRET in error.reason
+
+
 def test_nested_object_error_retains_path_without_raw_value():
     @dataclass
     class TokenPayload:
