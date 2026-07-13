@@ -1,285 +1,239 @@
-import dataclasses
-from typing import Any, Callable, Literal, Optional, get_args, get_origin, get_type_hints
-
-from .serialization_utils import get_attributes, is_enum, is_optional, is_primitive, is_union
-
-
-DeserializationMiddleware = dict[type, Callable[[object], type]]
-
-
-def __middleware_or_empty(middleware: Optional[DeserializationMiddleware]) -> DeserializationMiddleware:
-    return middleware if middleware is not None else {}
-
-
-def __is_literal(type_hint: type) -> bool:
-    return get_origin(type_hint) is Literal
-
-
-def __is_type_var(type_hint: type) -> bool:
-    return hasattr(type_hint, "__constraints__") and hasattr(type_hint, "__bound__")
-
-
-def __literal_matches(value: Any, literal_value: Any) -> bool:
-    return value == literal_value and type(value) is type(literal_value)
-
-
-def type_args_string(type: type):
-    if is_union(type):
-        name = "Union"
-    elif __is_literal(type):
-        name = "Literal"
-    elif __is_type_var(type):
-        name = getattr(type, "__name__", str(type))
-    elif hasattr(type, "__name__"):
-        name = type.__name__
-    else:
-        name = str(type)
-
-    args = get_args(type)
-    if len(args) == 0:
-        return name
-    return f"{name}[{', '.join([type_args_string(arg) for arg in args])}]"
-
-
-@dataclasses.dataclass
-class BaseDeserializationException(Exception):
-    error: Exception
-    value: Any
-
-    def __repr__(self):
-        s = ""
-        if isinstance(self.error, BaseDeserializationException):
-            s += " -> " + str(self.error)
-        else:
-            s += f"'{self.value}' |{str(self.error)}|"
-        return s
-
-    def __str__(self):
-        return self.__repr__()
-
-
-@dataclasses.dataclass
-class DeserializeDictKeyException(BaseDeserializationException):
-    keyType: type
-    valueType: type
-
-    def __repr__(self):
-        return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].key" + super().__repr__()
-
-
-@dataclasses.dataclass
-class DeserializeDictValueException(BaseDeserializationException):
-    keyType: type
-    valueType: type
-    key: Any
-
-    def __repr__(self):
-        return f"dict[{type_args_string(self.keyType)},{type_args_string(self.valueType)}].value" + super().__repr__()
-
-
-@dataclasses.dataclass
-class DeserializeListException(BaseDeserializationException):
-    itemType: type
-    index: int
-
-    def __repr__(self):
-        return f"{type_args_string(self.itemType)}[{self.index}]" + super().__repr__()
-
-
-@dataclasses.dataclass
-class DeserializeClassException(BaseDeserializationException):
-    field_type: type
-    field_name: str
-
-    def __repr__(self):
-        s = ""
-        if self.field_name:
-            s += self.field_name + ":"
-        if isinstance(self.error, (DeserializeListException, DeserializeDictKeyException, DeserializeDictValueException)):
-            s += self.error.__repr__()
-        else:
-            s += type_args_string(self.field_type) + super().__repr__()
-        return s
-
-
-def __deserialize_simple_object(data: dict, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    middleware = __middleware_or_empty(middleware)
-    attributes = get_attributes(classType)
-    type_hints = get_type_hints(classType.__init__)
-    if dataclasses.is_dataclass(classType):
-        type_hints.pop("return", None)
-
-    cls = object.__new__(classType)
-
-    for name, value in data.items():
-        field_type = attributes.pop(name) if name in attributes.keys() else None
-        field_type = type_hints.pop(name) if name in type_hints.keys() else field_type
-
-        if strict and field_type is None:
-            continue
-
-        try:
-            cls.__dict__[name] = __deserialize_inner(value, field_type, middleware, strict) if field_type else value
-        except Exception as e:
-            raise DeserializeClassException(e, value, field_type, name)
-
-    remaining = [name for name in attributes.keys()] + [name for name in type_hints.keys()]
-    for field in remaining:
-        cls.__dict__[field] = None
-
-    return cls
-
-
-def __deserialize_collection_items(values, collectionType: type, itemType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    middleware = __middleware_or_empty(middleware)
-    deserialized = []
-    for index in range(len(values)):
-        value = values[index]
-        try:
-            deserialized.append(__deserialize_inner(value, itemType, middleware, strict))
-        except Exception as e:
-            raise DeserializeListException(e, value, collectionType, index)
-    return deserialized
-
-
-def __deserialize_list(values: list, listType: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    typeArg = get_args(listType)[0] if get_args(listType) else Any
-    return __deserialize_collection_items(values, listType, typeArg, middleware, strict)
-
-
-def __deserialize_tuple(values: list, tupleType: tuple[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    typeArgs = get_args(tupleType)
-    if len(typeArgs) == 0:
-        return tuple(values)
-    if len(typeArgs) == 2 and typeArgs[1] is Ellipsis:
-        return tuple(__deserialize_collection_items(values, tupleType, typeArgs[0], middleware, strict))
-
-    if len(values) != len(typeArgs):
-        raise BaseDeserializationException(Exception(f"Expected tuple of length {len(typeArgs)}, got {len(values)}"), values)
-
-    deserialized = []
-    for index, typeArg in enumerate(typeArgs):
-        try:
-            deserialized.append(__deserialize_inner(values[index], typeArg, middleware, strict))
-        except Exception as e:
-            raise DeserializeListException(e, values[index], tupleType, index)
-    return tuple(deserialized)
-
-
-def __deserialize_set(values: list, setType: set[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    typeArg = get_args(setType)[0] if get_args(setType) else Any
-    return set(__deserialize_collection_items(values, setType, typeArg, middleware, strict))
-
-
-def __deserialize_frozenset(values: list, frozenSetType: frozenset[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    typeArg = get_args(frozenSetType)[0] if get_args(frozenSetType) else Any
-    return frozenset(__deserialize_collection_items(values, frozenSetType, typeArg, middleware, strict))
-
-
-def __deserialize_dict(data: dict, keyType: type, valueType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    middleware = __middleware_or_empty(middleware)
-    deserializedDict = {}
-    for key, value in data.items():
-        try:
-            deserializedKey = __deserialize_inner(key, keyType, middleware, strict)
-        except Exception as e:
-            raise DeserializeDictKeyException(e, key, keyType, valueType)
-
-        try:
-            deserializedValue = __deserialize_inner(value, valueType, middleware, strict)
-        except Exception as e:
-            raise DeserializeDictValueException(e, value, keyType, valueType, key)
-
-        deserializedDict[deserializedKey] = deserializedValue
-
-    return deserializedDict
-
-
-def __deserialize_union(value: Any, allowed_types: list[type], middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    middleware = __middleware_or_empty(middleware)
-    value_type = type(value)
-    for allowed_type in allowed_types:
-        if allowed_type is Any or value_type is allowed_type:
-            return value
-
-    for allowed_type in allowed_types:
-        try:
-            return __deserialize_inner(value, allowed_type, middleware, strict)
-        except Exception:
-            pass
-
-    raise BaseDeserializationException(Exception("Could not deserialize union"), value)
-
-
-def __deserialize_literal(value: Any, literalType: type):
-    allowed_values = get_args(literalType)
-    for literal_value in allowed_values:
-        if __literal_matches(value, literal_value):
-            return value
-    raise BaseDeserializationException(Exception(f"Expected one of {allowed_values}"), value)
-
-
-def __deserialize_type_var(value: Any, typeVar: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    constraints = getattr(typeVar, "__constraints__", ())
-    if constraints:
-        return __deserialize_union(value, constraints, middleware, strict)
-
-    bound = getattr(typeVar, "__bound__", None)
-    if bound is not None:
-        return __deserialize_inner(value, bound, middleware, strict)
-
+"""Public deserialization implementation facade.
+
+The deserialization engine lives in ``_deserialize_core``. This facade defines
+and enforces the public middleware contract while preserving the engine's
+existing exception types and recursive behavior.
+"""
+
+from collections.abc import Mapping, Sequence
+from typing import Any, Optional
+
+from . import _deserialize_core as _core
+from .middleware_context import (
+    DeserializationContext,
+    DeserializationMiddleware,
+    DeserializerMiddleware,
+)
+
+
+BaseDeserializationException = _core.BaseDeserializationException
+DeserializationMismatch = _core.DeserializationMismatch
+DeserializeClassException = _core.DeserializeClassException
+DeserializeDictKeyException = _core.DeserializeDictKeyException
+DeserializeDictValueException = _core.DeserializeDictValueException
+DeserializeListException = _core.DeserializeListException
+MissingRequiredFieldException = _core.MissingRequiredFieldException
+NullNotAllowedException = _core.NullNotAllowedException
+TypeMismatchException = _core.TypeMismatchException
+UnionDeserializationException = _core.UnionDeserializationException
+UnknownFieldException = _core.UnknownFieldException
+UnknownFieldPolicy = _core.UnknownFieldPolicy
+type_args_string = _core.type_args_string
+
+
+def _redacted_base_exception_repr(error: BaseDeserializationException) -> str:
+    """Format a deserialization failure without rendering its raw input value."""
+    if isinstance(error.error, BaseDeserializationException):
+        return " -> " + str(error.error)
+    return f"Deserialization failed ({type(error.error).__name__})"
+
+
+def _redacted_type_mismatch_repr(error: TypeMismatchException) -> str:
+    """Describe the type mismatch using types only, never the rejected value."""
+    return (
+        f"Expected {type_args_string(error.expected_type)}, "
+        f"got {type_args_string(error.actual_type)}"
+    )
+
+
+def _redacted_union_exception_repr(
+    error: UnionDeserializationException,
+) -> str:
+    """Retain branch diagnostics while relying on each branch's safe formatter."""
+    branches = "; ".join(
+        f"{type_args_string(branch_type)}: {branch_error}"
+        for branch_type, branch_error in error.branch_errors
+    )
+    return f"No union branch matched ({branches})"
+
+
+# Exception classes are defined in the private core, but their public rendering
+# contract belongs to this facade. Keep raw values available as structured
+# ``.value`` fields for callers that explicitly inspect them while preventing
+# accidental disclosure through logging, ``str(error)``, or ``repr(error)``.
+BaseDeserializationException.__repr__ = _redacted_base_exception_repr
+TypeMismatchException.__repr__ = _redacted_type_mismatch_repr
+UnionDeserializationException.__repr__ = _redacted_union_exception_repr
+
+
+_TEXT_LIKE_SEQUENCE_TYPES = (str, bytes, bytearray, memoryview)
+
+
+def _require_mapping(value: Any, target_type: type) -> Mapping:
+    if not isinstance(value, Mapping):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a mapping-shaped input",
+        )
     return value
 
 
-def deserialize(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    try:
-        return __deserialize_inner(value, classType, __middleware_or_empty(middleware), strict)
-    except Exception as e:
-        raise DeserializeClassException(e, value, classType, None)
+def _require_sequence(value: Any, target_type: type) -> Sequence:
+    if not isinstance(value, Sequence) or isinstance(
+        value,
+        _TEXT_LIKE_SEQUENCE_TYPES,
+    ):
+        raise TypeMismatchException(
+            value,
+            target_type,
+            type(value),
+            "expected a non-text sequence input",
+        )
+    return value
 
 
-def __deserialize_inner(value: Any, classType: type, middleware: Optional[DeserializationMiddleware] = None, strict: bool = False):
-    middleware = __middleware_or_empty(middleware)
+def _deserialize_raw_list(value: Any, context: DeserializationContext) -> list:
+    sequence = _require_sequence(value, list)
+    return [context.deserialize(item, Any) for item in sequence]
 
-    def deserialize_primitive(classType: type, value: Any):
-        try:
-            return classType(value)
-        except Exception as e:
-            raise BaseDeserializationException(e, value)
 
-    if classType is Any:
-        return value
-    if __is_literal(classType):
-        return __deserialize_literal(value, classType)
-    if __is_type_var(classType):
-        return __deserialize_type_var(value, classType, middleware, strict)
-    if (deserializer := middleware.get(classType, None)) is not None:
-        return deserializer(value, middleware)
-    if value is None:
-        return None
-    if is_primitive(classType):
-        return deserialize_primitive(classType, value)
-    if is_enum(classType):
-        return deserialize_primitive(classType, value)
-    if is_optional(classType):
-        realType = [arg for arg in get_args(classType) if arg is not type(None)][0]
-        return __deserialize_inner(value, realType, middleware, strict)
+def _deserialize_raw_tuple(value: Any, context: DeserializationContext) -> tuple:
+    sequence = _require_sequence(value, tuple)
+    return tuple(context.deserialize(item, Any) for item in sequence)
 
-    originType = get_origin(classType)
-    typeArgs = get_args(classType)
-    if originType is list:
-        return __deserialize_list(value, classType, middleware, strict)
-    if originType is tuple:
-        return __deserialize_tuple(value, classType, middleware, strict)
-    if originType is set:
-        return __deserialize_set(value, classType, middleware, strict)
-    if originType is frozenset:
-        return __deserialize_frozenset(value, classType, middleware, strict)
-    if originType is dict:
-        keyType = typeArgs[0] if len(typeArgs) > 0 else Any
-        valueType = typeArgs[1] if len(typeArgs) > 1 else Any
-        return __deserialize_dict(value, keyType, valueType, middleware, strict)
-    if is_union(classType):
-        return __deserialize_union(value, get_args(classType), middleware, strict)
 
-    return __deserialize_simple_object(value, classType, middleware, strict)
+def _deserialize_raw_set(value: Any, context: DeserializationContext) -> set:
+    sequence = _require_sequence(value, set)
+    return {context.deserialize(item, Any) for item in sequence}
+
+
+def _deserialize_raw_frozenset(
+    value: Any,
+    context: DeserializationContext,
+) -> frozenset:
+    sequence = _require_sequence(value, frozenset)
+    return frozenset(context.deserialize(item, Any) for item in sequence)
+
+
+def _deserialize_raw_dict(value: Any, context: DeserializationContext) -> dict:
+    mapping = _require_mapping(value, dict)
+    return {
+        context.deserialize(key, Any): context.deserialize(item, Any)
+        for key, item in mapping.items()
+    }
+
+
+_RAW_COLLECTION_DESERIALIZERS: dict[type, DeserializerMiddleware] = {
+    list: _deserialize_raw_list,
+    tuple: _deserialize_raw_tuple,
+    set: _deserialize_raw_set,
+    frozenset: _deserialize_raw_frozenset,
+    dict: _deserialize_raw_dict,
+}
+
+
+def _build_contexts(
+    middleware: Optional[DeserializationMiddleware],
+    *,
+    unknown_fields: UnknownFieldPolicy,
+    coerce: bool,
+) -> tuple[DeserializationContext, DeserializationContext]:
+    """Build public and engine contexts with hidden raw-collection fallbacks."""
+    registered = dict(middleware) if middleware is not None else {}
+    public_context = DeserializationContext(
+        registered,
+        unknown_fields=unknown_fields,
+        coerce=coerce,
+    )
+
+    effective = dict(_RAW_COLLECTION_DESERIALIZERS)
+    effective.update(registered)
+
+    # The engine receives wrappers so every middleware callable, including the
+    # internal collection fallbacks, sees the public context rather than the
+    # effective registry containing implementation details.
+    engine_middleware: dict[type, DeserializerMiddleware] = {}
+    for target_type, deserializer in effective.items():
+        engine_middleware[target_type] = (
+            lambda value, _engine_context, handler=deserializer: handler(
+                value,
+                public_context,
+            )
+        )
+
+    engine_context = DeserializationContext(
+        engine_middleware,
+        unknown_fields=unknown_fields,
+        coerce=coerce,
+    )
+    return public_context, engine_context
+
+
+def deserialize(
+    value: Any,
+    classType: type,
+    middleware: Optional[DeserializationMiddleware] = None,
+    strict: bool = False,
+    unknown_fields: Optional[UnknownFieldPolicy] = None,
+    coerce: bool = False,
+):
+    """Deserialize a value using optional type-specific middleware.
+
+    Middleware callables receive ``(value, context)``. The context is a
+    read-only mapping of the registered middleware and exposes
+    ``context.deserialize(value, target_type)`` for recursive deserialization
+    with the same unknown-field and primitive-coercion policies.
+    """
+    if type(coerce) is not bool:
+        raise TypeError("coerce must be a bool")
+
+    resolve_policy = getattr(_core, "__resolve_unknown_field_policy")
+    deserialize_inner = getattr(_core, "__deserialize_inner")
+    resolved_unknown_fields = resolve_policy(strict, unknown_fields)
+
+    public_context, engine_context = _build_contexts(
+        middleware,
+        unknown_fields=resolved_unknown_fields,
+        coerce=coerce,
+    )
+
+    recursive_deserialize = lambda nested_value, target_type: deserialize_inner(
+        nested_value,
+        target_type,
+        engine_context,
+        resolved_unknown_fields,
+    )
+    public_context._bind(recursive_deserialize)
+    engine_context._bind(recursive_deserialize)
+
+    return _core.deserialize(
+        value,
+        classType,
+        engine_context,
+        strict,
+        unknown_fields,
+        coerce,
+    )
+
+
+__all__ = [
+    "BaseDeserializationException",
+    "DeserializationContext",
+    "DeserializationMiddleware",
+    "DeserializerMiddleware",
+    "DeserializationMismatch",
+    "DeserializeClassException",
+    "DeserializeDictKeyException",
+    "DeserializeDictValueException",
+    "DeserializeListException",
+    "MissingRequiredFieldException",
+    "NullNotAllowedException",
+    "TypeMismatchException",
+    "UnionDeserializationException",
+    "UnknownFieldException",
+    "UnknownFieldPolicy",
+    "deserialize",
+    "type_args_string",
+]

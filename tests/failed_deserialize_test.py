@@ -1,6 +1,14 @@
 from dataclasses import dataclass
 
-from src.pserialize import deserialize
+import pytest
+
+from src.pserialize import TypeMismatchException, deserialize
+from src.pserialize.deserialize import (
+    DeserializeClassException,
+    DeserializeDictKeyException,
+    DeserializeDictValueException,
+    DeserializeListException,
+)
 
 from .models.enum import Number
 
@@ -27,71 +35,65 @@ def test_fail_deserialize_nested_class():
         "a": 2,
         "b": 1.0,
         "c": {
-            "d": [{
-                "e": "one"
-            },
-            {
-                "e": "1"
-            }]
-        }
+            "d": [
+                {"e": "one"},
+                {"e": "1"},
+            ]
+        },
     }
 
-    try:
+    with pytest.raises(DeserializeClassException) as captured:
         deserialize(data, klass1)
-    except Exception as e:
-        error = e
 
-    assert error is not None
-    assert str(error) == "klass1 -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
-    
-def test_fail_deserialize_primitives_int():
-    data = "Not a number"
-
-    try:
-        deserialize(data, int)
-    except Exception as e:
-        error = e
-
-    assert error is not None
-    assert str(error) == "int -> 'Not a number' |invalid literal for int() with base 10: 'Not a number'|"
-
-def test_fail_deserialize_primitives_float():
-    data = "Not a number"
-
-    try:
-        deserialize(data, float)
-    except Exception as e:
-        error = e
-
-    assert error is not None
-    assert str(error) == "float -> 'Not a number' |could not convert string to float: 'Not a number'|"
+    assert (
+        str(captured.value)
+        == "klass1 -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
+    )
 
 
-def test_fail_deserialize_list():
+@pytest.mark.parametrize("target_type", [int, float])
+def test_fail_deserialize_primitives_reports_type_mismatch(target_type):
+    with pytest.raises(DeserializeClassException) as captured:
+        deserialize("Not a number", target_type)
+
+    mismatch = captured.value.error
+    assert isinstance(mismatch, TypeMismatchException)
+    assert mismatch.expected_type is target_type
+    assert mismatch.actual_type is str
+    assert f"Expected {target_type.__name__}, got str" in str(captured.value)
+
+
+def test_fail_deserialize_list_retains_item_context():
     data = [123, 456, "SevenEightNine"]
 
-    try:
+    with pytest.raises(DeserializeClassException) as captured:
         deserialize(data, list[int])
-    except Exception as e:
-        error = e
 
-    assert error is not None
-    assert str(error) == "list[int][2] -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
+    list_error = captured.value.error
+    assert isinstance(list_error, DeserializeListException)
+    assert list_error.index == 2
+    assert isinstance(list_error.error, TypeMismatchException)
+    assert list_error.error.expected_type is int
+    assert list_error.error.actual_type is str
 
-def test_fail_deserialize_dict_value():
+
+def test_fail_deserialize_dict_value_retains_value_context():
     data = {
         "Key1": 123,
         "Key2": 456,
-        "Key3": "SevenEightNine"
+        "Key3": "SevenEightNine",
     }
 
-    try:
+    with pytest.raises(DeserializeClassException) as captured:
         deserialize(data, dict[str, int])
-    except Exception as e:
-        error = e
 
-    assert error is not None
-    assert str(error) == "dict[str,int].value -> 'SevenEightNine' |invalid literal for int() with base 10: 'SevenEightNine'|"
+    value_error = captured.value.error
+    assert isinstance(value_error, DeserializeDictValueException)
+    assert value_error.key == "Key3"
+    assert isinstance(value_error.error, TypeMismatchException)
+    assert value_error.error.expected_type is int
+    assert value_error.error.actual_type is str
+
 
 def test_fail_deserialize_dict_value_complex():
     data = {
@@ -99,36 +101,35 @@ def test_fail_deserialize_dict_value_complex():
             "a": 2,
             "b": 1.0,
             "c": {
-                "d": [{
-                    "e": "one"
-                },
-                {
-                    "e": "1"
-                }]
-            }
+                "d": [
+                    {"e": "one"},
+                    {"e": "1"},
+                ]
+            },
         }
     }
 
-    try:
+    with pytest.raises(DeserializeClassException) as captured:
         deserialize(data, dict[str, klass1])
-    except Exception as e:
-        error = e
 
-    assert error is not None
-    assert str(error) == "dict[str,klass1].value -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
+    assert (
+        str(captured.value)
+        == "dict[str,klass1].value -> c:klass2 -> d:list[klass3][1] -> e:Number -> '1' |'1' is not a valid Number|"
+    )
 
-        
-def test_fail_deserialize_dict_key():
+
+def test_fail_deserialize_dict_key_retains_key_context():
     data = {
         1: 123,
         2: 456,
-        "Three": 789
+        "Three": 789,
     }
 
-    try:
+    with pytest.raises(DeserializeClassException) as captured:
         deserialize(data, dict[int, int])
-    except Exception as e:
-        error = e
 
-    assert error is not None
-    assert str(error) == "dict[int,int].key -> 'Three' |invalid literal for int() with base 10: 'Three'|"
+    key_error = captured.value.error
+    assert isinstance(key_error, DeserializeDictKeyException)
+    assert isinstance(key_error.error, TypeMismatchException)
+    assert key_error.error.expected_type is int
+    assert key_error.error.actual_type is str

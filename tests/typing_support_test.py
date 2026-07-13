@@ -23,6 +23,7 @@ def test_legacy_typing_generics_deserialize():
             },
         },
         Payload,
+        coerce=True,
     )
 
     assert value == Payload(
@@ -96,7 +97,7 @@ def test_constrained_typevar_prefers_existing_value_type():
         value: ConstrainedScalar
 
     assert deserialize({"value": "4"}, Box) == Box("4")
-    assert deserialize({"value": 4.0}, Box) == Box(4)
+    assert deserialize({"value": 4.0}, Box, coerce=True) == Box(4)
 
 
 def test_bound_typevar_deserializes_to_bound_type():
@@ -104,7 +105,7 @@ def test_bound_typevar_deserializes_to_bound_type():
     class User:
         id: BoundInt
 
-    assert deserialize({"id": "42"}, User) == User(42)
+    assert deserialize({"id": "42"}, User, coerce=True) == User(42)
 
 
 def test_default_middlewares_are_not_shared():

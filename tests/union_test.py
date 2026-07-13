@@ -34,7 +34,7 @@ def test_union_still_coerces_when_value_is_not_already_allowed_type():
     class A:
         a: Union[int, str]
 
-    deserialized = deserialize({"a": 4.0}, A)
+    deserialized = deserialize({"a": 4.0}, A, coerce=True)
 
     assert deserialized == A(4)
 
@@ -61,7 +61,7 @@ def test_pep_604_union_still_coerces_when_value_is_not_already_allowed_type():
     class A:
         a: eval("int | str")
 
-    deserialized = deserialize({"a": 4.0}, A)
+    deserialized = deserialize({"a": 4.0}, A, coerce=True)
 
     assert deserialized == A(4)
 
@@ -74,4 +74,4 @@ def test_pep_604_optional_accepts_none_and_deserializes_real_type():
         a: eval("int | None")
 
     assert deserialize({"a": None}, A) == A(None)
-    assert deserialize({"a": "4"}, A) == A(4)
+    assert deserialize({"a": "4"}, A, coerce=True) == A(4)

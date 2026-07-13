@@ -3,25 +3,43 @@
 PSerialization provides helpers for converting Python objects to primitive
 Python data structures and reading those structures back into application
 objects.
-
-The main package API exposes the Serializer and Deserializer convenience
-classes, along with the lower-level serialize and deserialize functions.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
-from .serialize import serialize
-from .deserialize import deserialize
-
-
-SerializationMiddleware = dict[type, Callable[[object], type]]
+from .deserialize import (
+    DeserializationContext,
+    DeserializationMiddleware,
+    DeserializerMiddleware,
+    DeserializationMismatch,
+    MissingRequiredFieldException,
+    NullNotAllowedException,
+    TypeMismatchException,
+    UnionDeserializationException,
+    UnknownFieldException,
+    UnknownFieldPolicy,
+    deserialize,
+)
+from .middleware_context import (
+    SerializationContext,
+    SerializationMiddleware,
+    SerializerMiddleware,
+)
+from .serialize import (
+    SerializedKeyCollisionException,
+    UnsupportedKeyTypeException,
+    serialize,
+)
 
 
 class Serializer:
     """Serialize Python objects using optional type-specific middleware."""
 
-    def __init__(self, middleware: Optional[SerializationMiddleware] = None):
-        self.middleware = middleware if middleware is not None else {}
+    def __init__(
+        self,
+        middleware: Optional[SerializationMiddleware] = None,
+    ):
+        self.middleware = dict(middleware) if middleware is not None else {}
 
     def serialize(self, value: Any):
         return serialize(value, self.middleware)
@@ -30,11 +48,48 @@ class Serializer:
 class Deserializer:
     """Deserialize primitive values into typed Python objects."""
 
-    def __init__(self, middleware: Optional[SerializationMiddleware] = None):
-        self.middleware = middleware if middleware is not None else {}
+    def __init__(
+        self,
+        middleware: Optional[DeserializationMiddleware] = None,
+    ):
+        self.middleware = dict(middleware) if middleware is not None else {}
 
-    def deserialize(self, value: Any, classType: type, strict: bool = False):
-        return deserialize(value, classType, self.middleware, strict)
+    def deserialize(
+        self,
+        value: Any,
+        classType: type,
+        strict: bool = False,
+        unknown_fields: Optional[UnknownFieldPolicy] = None,
+        coerce: bool = False,
+    ):
+        return deserialize(
+            value,
+            classType,
+            self.middleware,
+            strict,
+            unknown_fields,
+            coerce,
+        )
 
 
-__all__ = ["Serializer", "Deserializer", "serialize", "deserialize"]
+__all__ = [
+    "Serializer",
+    "Deserializer",
+    "SerializationContext",
+    "DeserializationContext",
+    "SerializerMiddleware",
+    "DeserializerMiddleware",
+    "SerializationMiddleware",
+    "DeserializationMiddleware",
+    "DeserializationMismatch",
+    "MissingRequiredFieldException",
+    "NullNotAllowedException",
+    "TypeMismatchException",
+    "UnionDeserializationException",
+    "UnknownFieldException",
+    "UnknownFieldPolicy",
+    "UnsupportedKeyTypeException",
+    "SerializedKeyCollisionException",
+    "serialize",
+    "deserialize",
+]
